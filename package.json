@@ -9,7 +9,7 @@
     "pi",
     "pi-coding-agent",
     "extension",
-    "dispensable_ask"
+    "ask_user"
   ],
   "license": "MIT",
   "pi": {
@@ -18,9 +18,8 @@
     ]
   },
   "files": [
-    "config.ts",
     "index.ts",
-    "single-select-layout.ts",
+    "src",
     "LICENSE",
     "NOTICE",
     "README.md"

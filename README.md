@@ -1,14 +1,14 @@
 # dispensable-ask
 
 `dispensable-ask` is a Pi extension that exposes the model-visible
-`dispensable_ask` tool only when you want it. It is designed for local models
+`ask_user` tool only when you want it. It is designed for local models
 that sometimes reconsider the same decision instead of asking for the missing
 input.
 
 ## Behavior
 
 - Starts **disabled** in every session.
-- Press `Alt+A` to expose or hide `dispensable_ask`.
+- Press `Alt+A` to expose or hide `ask_user`.
 - The shortcut remains available while Pi is streaming an answer or thinking.
 - An in-flight model request may already have received the tool schema; when
   you disable it, the extension also blocks any stale tool call from that
@@ -23,6 +23,9 @@ input.
 
 The question UI supports single choice, multiple choice, searchable options,
 free-form answers, context, optional comments, and overlay or inline display.
+
+The package and its controls are named `dispensable-ask`. Only the tool exposed
+to the model is named `ask_user`.
 
 ## Install
 
@@ -98,6 +101,38 @@ export DISPENSABLE_ASK_COMMENT_TOGGLE_KEY=ctrl+g
 npm install
 npm run check
 ```
+
+### Architecture
+
+The package uses a feature-oriented extension layout. Dependencies point
+inward from Pi integration toward the `ask-user` feature and its UI:
+
+```text
+index.ts                              package entry point
+src/
+├── extension/
+│   ├── register-dispensable-ask.ts   composition root
+│   ├── ask-exposure.ts               session-local exposure state
+│   └── register-controls.ts          shortcut, command, lifecycle guards
+├── ask-user/
+│   ├── constants.ts                  model-visible tool identity
+│   ├── register-tool.ts              Pi tool schema and execution
+│   ├── dialogs.ts                    RPC/headless fallback
+│   ├── model.ts                      inputs, results, normalization
+│   └── ui/
+│       ├── ask-component.ts          question-flow container
+│       ├── multi-select-list.ts      multi-choice interaction
+│       ├── single-select-list.ts     searchable single-choice interaction
+│       ├── single-select-layout.ts   layout calculation
+│       └── shared.ts                 shared TUI primitives and shortcuts
+├── config/config.ts                  persistent global preferences
+├── lib/string-enum.ts                provider-compatible schema helper
+└── version.ts                        package-version lookup
+```
+
+`extension/` owns Pi lifecycle policy, while `ask-user/` owns the feature.
+The UI does not manage exposure or persistence, and configuration does not
+depend on the TUI.
 
 The interactive UI is adapted from
 [`pi-ask-user`](https://github.com/edlsh/pi-ask-user) 0.14.0 under the MIT

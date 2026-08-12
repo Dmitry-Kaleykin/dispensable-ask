@@ -9,7 +9,7 @@ import {
    normalizeConfig,
    parseTimeoutSeconds,
    saveConfig,
-} from "./config";
+} from "./src/config/config";
 
 describe("configuration", () => {
    it("uses safe defaults for missing or malformed values", () => {

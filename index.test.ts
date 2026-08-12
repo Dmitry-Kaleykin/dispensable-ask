@@ -59,8 +59,8 @@ async function createHarness(): Promise<Harness> {
       },
       tool,
       toolCall: (isEnabled) => {
-         if (isEnabled !== activeTools.includes("dispensable_ask")) throw new Error("Harness state mismatch");
-         return eventHandlers.get("tool_call")?.[0]?.({ toolName: "dispensable_ask" }, {});
+         if (isEnabled !== activeTools.includes("ask_user")) throw new Error("Harness state mismatch");
+         return eventHandlers.get("tool_call")?.[0]?.({ toolName: "ask_user" }, {});
       },
    };
 }
@@ -77,7 +77,7 @@ function createContext(input?: ExtensionContext["ui"]["input"]): ExtensionContex
    } as unknown as ExtensionContext;
 }
 
-describe("dispensable_ask lifecycle", () => {
+describe("ask_user lifecycle", () => {
    let agentDirectory: string;
 
    beforeEach(async () => {
@@ -99,7 +99,7 @@ describe("dispensable_ask lifecycle", () => {
       expect(harness.toolCall(false)).toMatchObject({ block: true });
 
       await harness.shortcut(ctx);
-      expect(harness.activeTools()).toEqual(["read", "dispensable_ask"]);
+      expect(harness.activeTools()).toEqual(["read", "ask_user"]);
       expect(harness.toolCall(true)).toBeUndefined();
 
       await harness.shortcut(ctx);
@@ -108,6 +108,7 @@ describe("dispensable_ask lifecycle", () => {
 
    it("keeps timeout out of the model-controlled schema", async () => {
       const harness = await createHarness();
+      expect(harness.tool.name).toBe("ask_user");
       expect(harness.tool.parameters.properties).not.toHaveProperty("timeout");
    });
 
