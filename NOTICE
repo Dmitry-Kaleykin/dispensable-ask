@@ -1,0 +1,8 @@
+dispensable-ask includes an adapted copy of the interactive UI from
+pi-ask-user 0.14.0:
+
+  Copyright (c) 2026 Enzo Lucchesi
+  https://github.com/edlsh/pi-ask-user
+
+pi-ask-user is distributed under the MIT License. Its copyright and license
+notice are preserved in LICENSE.
