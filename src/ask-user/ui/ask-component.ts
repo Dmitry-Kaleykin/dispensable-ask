@@ -39,6 +39,7 @@ export class AskComponent extends Container {
    private keybindings: KeybindingsManager;
    private shortcuts: ResolvedAskShortcuts;
    private onDone: (result: AskUIResult | null) => void;
+   private onActivity: () => void;
 
    private mode: AskMode = "select";
    private pendingSelections: string[] = [];
@@ -88,6 +89,7 @@ export class AskComponent extends Container {
       keybindings: KeybindingsManager,
       shortcuts: ResolvedAskShortcuts,
       onDone: (result: AskUIResult | null) => void,
+      onActivity: () => void,
    ) {
       super();
 
@@ -104,6 +106,7 @@ export class AskComponent extends Container {
       this.keybindings = keybindings;
       this.shortcuts = shortcuts;
       this.onDone = onDone;
+      this.onActivity = onActivity;
 
       // Layout skeleton
       this.addChild(new BoxBorderTop(
@@ -833,6 +836,7 @@ export class AskComponent extends Container {
    }
 
    handleInput(data: string): void {
+      this.onActivity();
       if (matchesKey(data, this.getContextToggleKey() as any) && this.toggleContext()) {
          return;
       }

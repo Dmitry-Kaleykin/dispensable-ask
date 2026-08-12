@@ -65,7 +65,10 @@ async function createHarness(): Promise<Harness> {
    };
 }
 
-function createContext(input?: ExtensionContext["ui"]["input"]): ExtensionContext {
+function createContext(
+   input?: ExtensionContext["ui"]["input"],
+   onTerminalInput?: ExtensionContext["ui"]["onTerminalInput"],
+): ExtensionContext {
    return {
       mode: "tui",
       hasUI: true,
@@ -73,6 +76,7 @@ function createContext(input?: ExtensionContext["ui"]["input"]): ExtensionContex
          setStatus: vi.fn(),
          notify: vi.fn(),
          input: input ?? vi.fn(),
+         onTerminalInput: onTerminalInput ?? vi.fn(() => () => {}),
       },
    } as unknown as ExtensionContext;
 }
@@ -112,7 +116,7 @@ describe("ask_user lifecycle", () => {
       expect(harness.tool.parameters.properties).not.toHaveProperty("timeout");
    });
 
-   it("auto-disables after the global deadline", async () => {
+   it("auto-disables after the configured period of inactivity", async () => {
       vi.useFakeTimers();
       await writeFile(
          join(agentDirectory, "dispensable-ask.json"),
@@ -121,7 +125,9 @@ describe("ask_user lifecycle", () => {
       );
       const harness = await createHarness();
       const input = vi.fn((_prompt, _placeholder, options) =>
-         new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), options.timeout))
+         new Promise<undefined>((resolve) => {
+            options.signal.addEventListener("abort", () => resolve(undefined), { once: true });
+         })
       );
       const ctx = createContext(input as ExtensionContext["ui"]["input"]);
 
@@ -141,5 +147,51 @@ describe("ask_user lifecycle", () => {
       expect(result.details).toMatchObject({ timedOut: true, cancelled: true });
       expect(result.content[0].text).toContain("disabled for this session");
       expect(harness.activeTools()).toEqual(["read"]);
+   });
+
+   it("restarts the idle timeout when the user types", async () => {
+      vi.useFakeTimers();
+      await writeFile(
+         join(agentDirectory, "dispensable-ask.json"),
+         JSON.stringify({ timeoutSeconds: 1, shortcut: "alt+a" }),
+         "utf8",
+      );
+      const harness = await createHarness();
+      let terminalInput: ((data: string) => unknown) | undefined;
+      const input = vi.fn((_prompt, _placeholder, options) =>
+         new Promise<undefined>((resolve) => {
+            options.signal.addEventListener("abort", () => resolve(undefined), { once: true });
+         })
+      );
+      const ctx = createContext(
+         input as ExtensionContext["ui"]["input"],
+         ((handler: (data: string) => unknown) => {
+            terminalInput = handler;
+            return () => {};
+         }) as ExtensionContext["ui"]["onTerminalInput"],
+      );
+
+      await harness.sessionStart(ctx);
+      await harness.shortcut(ctx);
+      let settled = false;
+      const resultPromise = harness.tool.execute(
+         "call-2",
+         { question: "What should I use?" },
+         new AbortController().signal,
+         undefined,
+         ctx,
+      ).then((result: unknown) => {
+         settled = true;
+         return result;
+      });
+
+      await vi.advanceTimersByTimeAsync(750);
+      terminalInput?.("x");
+      await vi.advanceTimersByTimeAsync(750);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(250);
+      const result = await resultPromise as any;
+      expect(result.details).toMatchObject({ timedOut: true });
    });
 });

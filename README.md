@@ -13,7 +13,10 @@ input.
 - An in-flight model request may already have received the tool schema; when
   you disable it, the extension also blocks any stale tool call from that
   request.
-- Questions time out after 30 seconds by default.
+- Questions time out after 30 seconds of inactivity by default.
+- Typing, navigating options, toggling a choice, or interacting with the prompt
+  restarts the idle timer. If you stop midway, a fresh 30-second window begins
+  after your last action.
 - A timeout disables the tool for the rest of that session. Only you can
   re-enable it.
 - Escape cancels the current question without changing the enabled state.
@@ -116,6 +119,7 @@ src/
 │   └── register-controls.ts          shortcut, command, lifecycle guards
 ├── ask-user/
 │   ├── constants.ts                  model-visible tool identity
+│   ├── idle-timeout.ts               restartable inactivity timer
 │   ├── register-tool.ts              Pi tool schema and execution
 │   ├── dialogs.ts                    RPC/headless fallback
 │   ├── model.ts                      inputs, results, normalization

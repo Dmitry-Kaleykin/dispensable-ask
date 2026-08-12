@@ -6,7 +6,8 @@ import {
 import { formatTimeout } from "../config/config";
 import type { AskExposure } from "../extension/ask-exposure";
 import { MODEL_TOOL_NAME } from "./constants";
-import { askViaDialogs, runDialogBeforeDeadline } from "./dialogs";
+import { askViaDialogs, runDialogWithIdleTimeout } from "./dialogs";
+import { IdleTimeout } from "./idle-timeout";
 import {
   type AskDisplayMode, type AskParams, type AskSingleSelectLayout,
   type AskToolDetails, type AskUIResult, coerceOption, createFreeformResponse,
@@ -127,7 +128,6 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
             commentToggleKey,
          } = params as AskParams;
          const timeout = exposure.config.timeoutSeconds * 1000;
-         const deadline = Date.now() + timeout;
          let timedOut = false;
          const markTimedOut = () => {
             timedOut = true;
@@ -195,10 +195,12 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
             pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
             let answer: string | undefined;
             try {
-               answer = await runDialogBeforeDeadline(
-                  deadline,
+               answer = await runDialogWithIdleTimeout(
+                  ctx.ui,
+                  timeout,
                   markTimedOut,
                   (dialogOptions) => ctx.ui.input(prompt, "Type your answer...", dialogOptions),
+                  signal,
                );
             } finally {
                pi.events.emit("herdr:blocked", { active: false });
@@ -244,7 +246,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
          let result: AskUIResult | null;
          let overlayHandle: OverlayHandle | undefined;
          let removeOverlayInputListener: (() => void) | undefined;
-         let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+         let idleTimeout: IdleTimeout | undefined;
          let hasAnnouncedHide = false;
          pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
          try {
@@ -254,10 +256,11 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
                   signal.addEventListener("abort", onAbort, { once: true });
                }
 
-               timeoutHandle = setTimeout(() => {
+               idleTimeout = new IdleTimeout(timeout, () => {
                   markTimedOut();
                   done(null);
-               }, Math.max(1, deadline - Date.now()));
+               });
+               idleTimeout.start();
 
                return new AskComponent(
                   question,
@@ -273,6 +276,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
                   keybindings,
                   shortcuts,
                   done,
+                  () => idleTimeout?.touch(),
                );
             };
 
@@ -288,6 +292,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
             ) {
                removeOverlayInputListener = ctx.ui.onTerminalInput((data) => {
                   if (!overlayToggle.matches(data) || !overlayHandle) return undefined;
+                  idleTimeout?.touch();
                   const nextHidden = !overlayHandle.isHidden();
                   overlayHandle.setHidden(nextHidden);
                   if (nextHidden && !hasAnnouncedHide) {
@@ -317,8 +322,9 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
                   allowMultiple,
                   allowFreeform,
                   allowComment,
-                  deadline,
+                  timeout,
                   markTimedOut,
+                  signal,
                );
             }
          } catch (error) {
@@ -330,7 +336,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
                details: { error: message },
             };
          } finally {
-            if (timeoutHandle) clearTimeout(timeoutHandle);
+            idleTimeout?.stop();
             removeOverlayInputListener?.();
             pi.events.emit("herdr:blocked", { active: false });
          }
