@@ -12,10 +12,6 @@ export interface AskParams {
    allowMultiple?: boolean;
    allowFreeform?: boolean;
    allowComment?: boolean;
-   displayMode?: AskDisplayMode;
-   singleSelectLayout?: AskSingleSelectLayout;
-   overlayToggleKey?: string | null;
-   commentToggleKey?: string | null;
 }
 
 export type AskResponse =

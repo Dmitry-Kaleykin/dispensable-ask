@@ -110,10 +110,27 @@ describe("ask_user lifecycle", () => {
       expect(harness.activeTools()).toEqual(["read"]);
    });
 
-   it("keeps timeout out of the model-controlled schema", async () => {
+   it("keeps global and UI preferences out of the model-controlled schema", async () => {
       const harness = await createHarness();
       expect(harness.tool.name).toBe("ask_user");
       expect(harness.tool.parameters.properties).not.toHaveProperty("timeout");
+      expect(harness.tool.parameters.properties).not.toHaveProperty("displayMode");
+      expect(harness.tool.parameters.properties).not.toHaveProperty("singleSelectLayout");
+      expect(harness.tool.parameters.properties).not.toHaveProperty("overlayToggleKey");
+      expect(harness.tool.parameters.properties).not.toHaveProperty("commentToggleKey");
+   });
+
+   it("instructs the model to honor explicit test requests with a tool call", async () => {
+      const harness = await createHarness();
+      const instructions = [
+         harness.tool.description,
+         harness.tool.promptSnippet,
+         ...harness.tool.promptGuidelines,
+      ].join("\n");
+
+      expect(instructions).toContain("explicitly asks");
+      expect(instructions).toContain("call ask_user immediately");
+      expect(instructions).toContain("ordinary assistant prose");
    });
 
    it("auto-disables after the configured period of inactivity", async () => {

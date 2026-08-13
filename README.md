@@ -98,6 +98,10 @@ export DISPENSABLE_ASK_OVERLAY_TOGGLE_KEY=alt+o
 export DISPENSABLE_ASK_COMMENT_TOGGLE_KEY=ctrl+g
 ```
 
+These presentation settings are global user configuration. They are not
+included in the `ask_user` schema and cannot be chosen or overridden by the
+model.
+
 ## Development
 
 ```sh
@@ -130,7 +134,6 @@ src/
 │       ├── single-select-layout.ts   layout calculation
 │       └── shared.ts                 shared TUI primitives and shortcuts
 ├── config/config.ts                  persistent global preferences
-├── lib/string-enum.ts                provider-compatible schema helper
 └── version.ts                        package-version lookup
 ```
 

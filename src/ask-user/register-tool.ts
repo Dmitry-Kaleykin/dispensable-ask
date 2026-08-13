@@ -20,18 +20,19 @@ import {
   DEFAULT_COMMENT_TOGGLE_KEY, DEFAULT_OVERLAY_TOGGLE_KEY,
   type ResolvedAskShortcuts, buildCustomUIOptions, resolveShortcut,
 } from "./ui/shared";
-import { StringEnum } from "../lib/string-enum";
 
 export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): void {
    pi.registerTool({
       name: MODEL_TOOL_NAME,
       label: "Dispensable Ask",
       description:
-         "Ask the user one focused question when you are blocked, especially when you are revisiting the same decision instead of making progress. Do not re-ask decisions the user already made. The user may not answer; if the request times out, continue using your best judgment.",
+         "Ask the user one focused question. Call this tool immediately when the user explicitly asks you to call or test ask_user; the explicit request is sufficient reason. Otherwise, use it when you are blocked, especially when you are revisiting the same decision instead of making progress. Never imitate the tool by writing its question or options as ordinary prose. Do not re-ask decisions the user already made. The user may not answer; if the request times out, continue using your best judgment.",
       promptSnippet:
-         "Ask the user one focused question when blocked or repeatedly revisiting a decision",
+         "Ask one focused question when explicitly requested, blocked, or repeatedly revisiting a decision",
       promptGuidelines: [
-         "Before calling ask_user, gather available context and pass a short summary via the context field.",
+         "If the user explicitly asks you to call or test ask_user, call ask_user immediately. The request itself is sufficient context; do not invent or wait for another reason.",
+         "Do not reproduce an ask_user question or its options as ordinary assistant prose; make the tool call instead.",
+         "For calls that were not explicitly requested by the user, first gather available context and pass a short summary via the context field.",
          "Prefer ask_user over repeatedly reconsidering the same user-dependent decision.",
          "Ask exactly one focused question per ask_user call.",
          "Do not ask for confirmation of a decision the user already made.",
@@ -73,28 +74,6 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
          allowComment: Type.Optional(
             Type.Boolean({ description: "Collect an optional comment after selecting one or more options. Default: DISPENSABLE_ASK_ALLOW_COMMENT env var if set, otherwise false." }),
          ),
-         displayMode: Type.Optional(
-            StringEnum(["overlay", "inline"] as const, {
-               description: "UI rendering mode. 'overlay' shows a centered modal, 'inline' renders in-place. Default: DISPENSABLE_ASK_DISPLAY_MODE env var if set, otherwise 'overlay'. Omit to respect the user's configured preference.",
-            }),
-         ),
-         singleSelectLayout: Type.Optional(
-            StringEnum(["auto", "list"] as const, {
-               description: "Single-select layout. 'auto' uses a details pane on wide terminals; 'list' always keeps descriptions below options. Default: DISPENSABLE_ASK_SINGLE_SELECT_LAYOUT if set, otherwise 'auto'.",
-            }),
-         ),
-         overlayToggleKey: Type.Optional(
-            Type.String({
-               description:
-                  "Shortcut for hiding/showing the overlay popup (overlay mode only), e.g. 'alt+o' or 'ctrl+shift+h'. Pass 'off' to disable. Default: DISPENSABLE_ASK_OVERLAY_TOGGLE_KEY env var if set, otherwise 'alt+o'.",
-            }),
-         ),
-         commentToggleKey: Type.Optional(
-            Type.String({
-               description:
-                  "Shortcut for toggling the optional comment/extra-context row when allowComment is true, e.g. 'ctrl+g'. Pass 'off' to disable. Default: DISPENSABLE_ASK_COMMENT_TOGGLE_KEY env var if set, otherwise 'ctrl+g'.",
-            }),
-         ),
       }),
 
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
@@ -122,10 +101,6 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
             allowMultiple = false,
             allowFreeform = true,
             allowComment: requestedAllowComment,
-            displayMode,
-            singleSelectLayout,
-            overlayToggleKey,
-            commentToggleKey,
          } = params as AskParams;
          const timeout = exposure.config.timeoutSeconds * 1000;
          let timedOut = false;
@@ -135,21 +110,21 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
          const envMode = process.env.DISPENSABLE_ASK_DISPLAY_MODE?.trim().toLowerCase();
          const envDisplayMode: AskDisplayMode | undefined =
             envMode === "overlay" || envMode === "inline" ? envMode : undefined;
-         const effectiveDisplayMode: AskDisplayMode = displayMode ?? envDisplayMode ?? "overlay";
+         const effectiveDisplayMode: AskDisplayMode = envDisplayMode ?? "overlay";
          const envSingleSelectLayout = process.env.DISPENSABLE_ASK_SINGLE_SELECT_LAYOUT?.trim().toLowerCase();
-         const effectiveSingleSelectLayout: AskSingleSelectLayout = singleSelectLayout
-            ?? (envSingleSelectLayout === "list" ? "list" : "auto");
+         const effectiveSingleSelectLayout: AskSingleSelectLayout =
+            envSingleSelectLayout === "list" ? "list" : "auto";
          const allowComment = requestedAllowComment
             ?? parseBooleanPreference(process.env.DISPENSABLE_ASK_ALLOW_COMMENT)
             ?? false;
          const shortcuts: ResolvedAskShortcuts = {
             overlayToggle: resolveShortcut(
-               overlayToggleKey,
+               undefined,
                process.env.DISPENSABLE_ASK_OVERLAY_TOGGLE_KEY,
                DEFAULT_OVERLAY_TOGGLE_KEY,
             ),
             commentToggle: resolveShortcut(
-               commentToggleKey,
+               undefined,
                process.env.DISPENSABLE_ASK_COMMENT_TOGGLE_KEY,
                DEFAULT_COMMENT_TOGGLE_KEY,
             ),
