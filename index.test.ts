@@ -100,14 +100,17 @@ describe("ask_user lifecycle", () => {
 
       await harness.sessionStart(ctx);
       expect(harness.activeTools()).toEqual(["read"]);
+      expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "ask:off");
       expect(harness.toolCall(false)).toMatchObject({ block: true });
 
       await harness.shortcut(ctx);
       expect(harness.activeTools()).toEqual(["read", "ask_user"]);
+      expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "ask:on");
       expect(harness.toolCall(true)).toBeUndefined();
 
       await harness.shortcut(ctx);
       expect(harness.activeTools()).toEqual(["read"]);
+      expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "ask:off");
    });
 
    it("keeps global and UI preferences out of the model-controlled schema", async () => {
@@ -170,7 +173,7 @@ describe("ask_user lifecycle", () => {
       vi.useFakeTimers();
       await writeFile(
          join(agentDirectory, "dispensable-ask.json"),
-         JSON.stringify({ timeoutSeconds: 1, shortcut: "alt+a" }),
+         JSON.stringify({ timeoutSeconds: 2, shortcut: "alt+a" }),
          "utf8",
       );
       const harness = await createHarness();
@@ -202,13 +205,17 @@ describe("ask_user lifecycle", () => {
          return result;
       });
 
-      await vi.advanceTimersByTimeAsync(750);
+      expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "ask:on · 2s");
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "ask:on · 1s");
       terminalInput?.("x");
-      await vi.advanceTimersByTimeAsync(750);
+      expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "ask:on · 2s");
+      await vi.advanceTimersByTimeAsync(1_500);
       expect(settled).toBe(false);
 
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(500);
       const result = await resultPromise as any;
       expect(result.details).toMatchObject({ timedOut: true });
+      expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "ask:off");
    });
 });

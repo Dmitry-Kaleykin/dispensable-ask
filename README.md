@@ -14,6 +14,9 @@ input.
   you disable it, the extension also blocks any stale tool call from that
   request.
 - Questions time out after 30 seconds of inactivity by default.
+- While a question is open, the status widget shows the remaining idle time.
+  It jumps back to the configured limit whenever you interact. Outside an
+  active question, the widget shows only `ask:on` or `ask:off`.
 - Typing, navigating options, toggling a choice, or interacting with the prompt
   restarts the idle timer. If you stop midway, a fresh 30-second window begins
   after your last action.

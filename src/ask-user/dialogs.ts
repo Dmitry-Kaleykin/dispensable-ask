@@ -27,12 +27,13 @@ export async function runDialogWithIdleTimeout<T>(
    onTimeout: () => void,
    operation: (options: DialogOptions) => Promise<T>,
    parentSignal?: AbortSignal,
+   onTick?: (remainingSeconds: number) => void,
 ): Promise<T | undefined> {
    const dialogAbort = new AbortController();
    const idleTimeout = new IdleTimeout(timeoutMs, () => {
       onTimeout();
       dialogAbort.abort();
-   });
+   }, onTick);
    const abortFromParent = () => dialogAbort.abort();
    if (parentSignal?.aborted) {
       dialogAbort.abort();
@@ -68,6 +69,7 @@ export async function askViaDialogs(
    timeoutMs: number,
    onTimeout: () => void,
    signal?: AbortSignal,
+   onTick?: (remainingSeconds: number) => void,
 ): Promise<AskUIResult | null> {
    const prompt = context ? `${question}\n\nContext:\n${context}` : question;
 
@@ -83,6 +85,7 @@ export async function askViaDialogs(
             dialogOptions,
          ),
          signal,
+         onTick,
       ) as string | undefined;
       if (isCancelledInput(rawSelections)) return null;
 
@@ -103,6 +106,7 @@ export async function askViaDialogs(
             dialogOptions,
          ),
          signal,
+         onTick,
       ) as string | undefined;
       return createSelectionResponse(selections, comment);
    }
@@ -116,6 +120,7 @@ export async function askViaDialogs(
       onTimeout,
       (dialogOptions) => ui.select(prompt, selectOptions, dialogOptions),
       signal,
+      onTick,
    ) as string | undefined;
    if (isCancelledInput(selected)) return null;
 
@@ -126,6 +131,7 @@ export async function askViaDialogs(
          onTimeout,
          (dialogOptions) => ui.input(prompt, "Type your answer...", dialogOptions),
          signal,
+         onTick,
       ) as string | undefined;
       if (isCancelledInput(answer)) return null;
       return createFreeformResponse(answer);
@@ -145,6 +151,7 @@ export async function askViaDialogs(
          dialogOptions,
       ),
       signal,
+      onTick,
    ) as string | undefined;
    return createSelectionResponse([selected], comment);
 }

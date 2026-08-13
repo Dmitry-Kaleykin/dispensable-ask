@@ -30,6 +30,24 @@ describe("IdleTimeout", () => {
       expect(onExpire).toHaveBeenCalledOnce();
    });
 
+   it("reports a visible countdown and resets it after activity", async () => {
+      vi.useFakeTimers();
+      const onTick = vi.fn();
+      const timeout = new IdleTimeout(3_000, vi.fn(), onTick);
+
+      timeout.start();
+      expect(onTick).toHaveBeenLastCalledWith(3);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(onTick).toHaveBeenLastCalledWith(2);
+
+      timeout.touch();
+      expect(onTick).toHaveBeenLastCalledWith(3);
+
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(onTick).toHaveBeenLastCalledWith(0);
+   });
+
    it("does not expire after being stopped", async () => {
       vi.useFakeTimers();
       const onExpire = vi.fn();

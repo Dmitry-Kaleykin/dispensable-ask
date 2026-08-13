@@ -17,8 +17,12 @@ export class AskExposure {
    public refreshStatus(ctx: ExtensionContext): void {
       ctx.ui.setStatus(
          STATUS_KEY,
-         `ask:${this.enabled ? "on" : "off"} · ${formatTimeout(this.config.timeoutSeconds)}`,
+         `ask:${this.enabled ? "on" : "off"}`,
       );
+   }
+
+   public showCountdown(ctx: ExtensionContext, remainingSeconds: number): void {
+      ctx.ui.setStatus(STATUS_KEY, `ask:on · ${remainingSeconds}s`);
    }
 
    public apply(nextEnabled: boolean): void {

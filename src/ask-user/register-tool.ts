@@ -107,6 +107,9 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
          const markTimedOut = () => {
             timedOut = true;
          };
+         const showCountdown = (remainingSeconds: number) => {
+            exposure.showCountdown(ctx, remainingSeconds);
+         };
          const envMode = process.env.DISPENSABLE_ASK_DISPLAY_MODE?.trim().toLowerCase();
          const envDisplayMode: AskDisplayMode | undefined =
             envMode === "overlay" || envMode === "inline" ? envMode : undefined;
@@ -176,6 +179,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
                   markTimedOut,
                   (dialogOptions) => ctx.ui.input(prompt, "Type your answer...", dialogOptions),
                   signal,
+                  showCountdown,
                );
             } finally {
                pi.events.emit("herdr:blocked", { active: false });
@@ -234,7 +238,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
                idleTimeout = new IdleTimeout(timeout, () => {
                   markTimedOut();
                   done(null);
-               });
+               }, showCountdown);
                idleTimeout.start();
 
                return new AskComponent(
@@ -300,6 +304,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
                   timeout,
                   markTimedOut,
                   signal,
+                  showCountdown,
                );
             }
          } catch (error) {
@@ -359,6 +364,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
          };
          } finally {
             exposure.activeAsk = false;
+            if (ctx.ui) exposure.refreshStatus(ctx);
          }
       },
 
