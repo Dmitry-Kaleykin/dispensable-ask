@@ -21,23 +21,35 @@ import {
   type ResolvedAskShortcuts, buildCustomUIOptions, resolveShortcut,
 } from "./ui/shared";
 
+export const DEFAULT_PROMPT_SNIPPET = `Ask the user a question to clarify requirements or get a decision`;
+export const DEFAULT_PROMPT_GUIDELINES: string[] = [
+    `Use ask_user whenever the user's request is underspecified and you cannot proceed without concrete decisions.`,
+    "If the user explicitly asks you to call or test ask_user, call ask_user immediately. The request itself is sufficient context; do not invent or wait for another reason.",
+    "Do not reproduce an ask_user question or its options as ordinary assistant prose; make the tool call instead.",
+    "For calls that were not explicitly requested by the user, first gather available context and pass a short summary via the context field.",
+    "Prefer ask_user over repeatedly reconsidering the same user-dependent decision.",
+    "Ask exactly one focused question per ask_user call.",
+    "Provide options when the answer is one of a few concrete choices; omit them so the user can answer freely when the question is open-ended.",
+    "Call ask_user on its own turn; do not batch it with other tool calls, since the turn's tool calls run sequentially and are blocked until the user answers.",
+    "Do not ask for confirmation of a decision the user already made.",
+    "If ask_user times out or is disabled, continue with your best judgment instead of retrying.",
+];
+
+export const DEFAULT_TOOL_DESCRIPTION = `Ask the user a structured question and wait for their answer. Use it to clarify ambiguous instructions, gather preferences, or get a decision on how to proceed.
+
+How it works:
+- Provide options when the answer is one of a few concrete choices; the user picks from them (or more, if allowMultiple is true). Omit options to get a freeform text answer.
+- Even with options, the user can still answer in freeform by default.
+- Call ask_user on its own, not batched with other tool calls: while a question is open the turn's tool calls run one at a time, so side-effecting calls should not be queued behind it.
+- The user may not answer; on timeout the tool is disabled for the rest of the session. Continue with your best judgment and do not retry.`;
+
 export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): void {
    pi.registerTool({
       name: MODEL_TOOL_NAME,
       label: "Dispensable Ask",
-      description:
-         "Ask the user one focused question. Call this tool immediately when the user explicitly asks you to call or test ask_user; the explicit request is sufficient reason. Otherwise, use it when you are blocked, especially when you are revisiting the same decision instead of making progress. Never imitate the tool by writing its question or options as ordinary prose. Do not re-ask decisions the user already made. The user may not answer; if the request times out, continue using your best judgment.",
-      promptSnippet:
-         "Ask one focused question when explicitly requested, blocked, or repeatedly revisiting a decision",
-      promptGuidelines: [
-         "If the user explicitly asks you to call or test ask_user, call ask_user immediately. The request itself is sufficient context; do not invent or wait for another reason.",
-         "Do not reproduce an ask_user question or its options as ordinary assistant prose; make the tool call instead.",
-         "For calls that were not explicitly requested by the user, first gather available context and pass a short summary via the context field.",
-         "Prefer ask_user over repeatedly reconsidering the same user-dependent decision.",
-         "Ask exactly one focused question per ask_user call.",
-         "Do not ask for confirmation of a decision the user already made.",
-         "If ask_user times out or is disabled, continue with your best judgment instead of retrying.",
-      ],
+      description: DEFAULT_TOOL_DESCRIPTION,
+      promptSnippet: DEFAULT_PROMPT_SNIPPET,
+      promptGuidelines: DEFAULT_PROMPT_GUIDELINES,
       // Block other tool calls in the same assistant turn until the user answers,
       // so the model can't batch ask_user with bash/edit/write and let those run
       // (potentially with side effects) before the user sees the prompt.
