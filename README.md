@@ -16,7 +16,10 @@ input.
 - Questions time out after 30 seconds of inactivity by default.
 - While a question is open, the status widget shows the remaining idle time.
   It jumps back to the configured limit whenever you interact. Outside an
-  active question, the widget shows only `ask:on` or `ask:off`.
+  active question, the widget shows only `❓ ask:on` or `❓ ask:off`.
+- The status is painted in the theme's accent colour, like the `🔌 MCP: …`
+  and `🔒 Sandbox: …` statuses next to it. Pi prints footer status text
+  verbatim, so the extension applies the colour itself.
 - Typing, navigating options, toggling a choice, or interacting with the prompt
   restarts the idle timer. If you stop midway, a fresh 30-second window begins
   after your last action.
@@ -123,6 +126,7 @@ src/
 ├── extension/
 │   ├── register-dispensable-ask.ts   composition root
 │   ├── ask-exposure.ts               session-local exposure state
+│   ├── status.ts                     footer status text and accent colour
 │   └── register-controls.ts          shortcut, command, lifecycle guards
 ├── ask-user/
 │   ├── constants.ts                  model-visible tool identity

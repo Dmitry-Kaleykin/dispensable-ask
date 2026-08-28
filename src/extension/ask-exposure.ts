@@ -1,8 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { formatTimeout, type DispensableAskConfig } from "../config/config";
 import { MODEL_TOOL_NAME } from "../ask-user/constants";
-
-const STATUS_KEY = "dispensable-ask";
+import { renderStatus, STATUS_KEY } from "./status";
 
 /** Owns session-local exposure state; global configuration is injected. */
 export class AskExposure {
@@ -15,14 +14,11 @@ export class AskExposure {
    ) {}
 
    public refreshStatus(ctx: ExtensionContext): void {
-      ctx.ui.setStatus(
-         STATUS_KEY,
-         `ask:${this.enabled ? "on" : "off"}`,
-      );
+      ctx.ui.setStatus(STATUS_KEY, renderStatus(this.enabled, undefined, ctx));
    }
 
    public showCountdown(ctx: ExtensionContext, remainingSeconds: number): void {
-      ctx.ui.setStatus(STATUS_KEY, `ask:on · ${remainingSeconds}s`);
+      ctx.ui.setStatus(STATUS_KEY, renderStatus(true, remainingSeconds, ctx));
    }
 
    public apply(nextEnabled: boolean): void {
