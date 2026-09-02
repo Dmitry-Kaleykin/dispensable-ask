@@ -24,9 +24,7 @@ import {
 export const DEFAULT_PROMPT_SNIPPET = `Ask the user a question to clarify requirements or get a decision`;
 export const DEFAULT_PROMPT_GUIDELINES: string[] = [
     `Use ask_user whenever the user's request is underspecified and you cannot proceed without concrete decisions.`,
-    "If the user explicitly asks you to call or test ask_user, call ask_user immediately. The request itself is sufficient context; do not invent or wait for another reason.",
-    "Do not reproduce an ask_user question or its options as ordinary assistant prose; make the tool call instead.",
-    "For calls that were not explicitly requested by the user, first gather available context and pass a short summary via the context field.",
+    "For calls, first gather available context and pass a short summary via the context field.",
     "Prefer ask_user over repeatedly reconsidering the same user-dependent decision.",
     "Ask exactly one focused question per ask_user call.",
     "Provide options when the answer is one of a few concrete choices; omit them so the user can answer freely when the question is open-ended.",
