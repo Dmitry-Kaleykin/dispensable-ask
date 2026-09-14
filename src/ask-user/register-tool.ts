@@ -8,6 +8,7 @@ import type { AskExposure } from "../extension/ask-exposure";
 import { MODEL_TOOL_NAME } from "./constants";
 import { askViaDialogs, runDialogWithIdleTimeout } from "./dialogs";
 import { IdleTimeout } from "./idle-timeout";
+import { focusTerminal, shouldFocusTerminal } from "./terminal-focus";
 import {
   type AskDisplayMode, type AskParams, type AskSingleSelectLayout,
   type AskToolDetails, type AskUIResult, coerceOption, createFreeformResponse,
@@ -176,6 +177,16 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
                isError: true,
                details: { question, context: normalizedContext, options, response: null, cancelled: true } as AskToolDetails,
             };
+         }
+
+         if (ctx.mode === "tui" && shouldFocusTerminal()) {
+            await focusTerminal(signal);
+            if (signal?.aborted) {
+               return {
+                  content: [{ type: "text", text: "Cancelled" }],
+                  details: { question, options, response: null, cancelled: true } as AskToolDetails,
+               };
+            }
          }
 
          if (options.length === 0) {

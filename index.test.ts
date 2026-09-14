@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import dispensableAsk from "./index";
+import { focusTerminal, shouldFocusTerminal } from "./src/ask-user/terminal-focus";
+
+vi.mock("./src/ask-user/terminal-focus", () => ({
+   focusTerminal: vi.fn(async () => {}),
+   shouldFocusTerminal: vi.fn(() => false),
+}));
 
 interface Harness {
    api: ExtensionAPI;
@@ -85,6 +91,8 @@ describe("ask_user lifecycle", () => {
    let agentDirectory: string;
 
    beforeEach(async () => {
+      vi.mocked(shouldFocusTerminal).mockReset().mockReturnValue(false);
+      vi.mocked(focusTerminal).mockReset().mockResolvedValue(undefined);
       agentDirectory = await mkdtemp(join(tmpdir(), "dispensable-ask-agent-"));
       process.env.PI_CODING_AGENT_DIR = agentDirectory;
    });
@@ -134,6 +142,54 @@ describe("ask_user lifecycle", () => {
       expect(instructions).toContain("explicitly asks");
       expect(instructions).toContain("call ask_user immediately");
       expect(instructions).toContain("ordinary assistant prose");
+   });
+
+   it.each([{ options: [] }, { options: [{ title: "Yes" }] }])("focuses before opening the question and starting its timer ($options)", async ({ options }) => {
+      vi.mocked(shouldFocusTerminal).mockReturnValue(true);
+      let finishFocus!: () => void;
+      vi.mocked(focusTerminal).mockImplementation(() => new Promise((resolve) => { finishFocus = resolve; }));
+      const harness = await createHarness();
+      const ctx = createContext(vi.fn(async () => "Yes"));
+      ctx.ui.custom = vi.fn(async () => null) as any;
+      await harness.command("on", ctx);
+      const pending = harness.tool.execute("focus", { question: "Proceed?", options }, undefined, undefined, ctx);
+
+      expect(focusTerminal).toHaveBeenCalledOnce();
+      expect(ctx.ui.input).not.toHaveBeenCalled();
+      expect(ctx.ui.custom).not.toHaveBeenCalled();
+      expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "❓ ask:on");
+      finishFocus();
+      await pending;
+      expect(options.length ? ctx.ui.custom : ctx.ui.input).toHaveBeenCalledOnce();
+   });
+
+   it("does not focus for disabled, malformed, headless, RPC, or aborted calls", async () => {
+      vi.mocked(shouldFocusTerminal).mockReturnValue(true);
+      const harness = await createHarness();
+      const ctx = createContext(vi.fn(async () => "Answer"));
+      const call = (params = { question: "Question?" }, context = ctx, signal?: AbortSignal) =>
+         harness.tool.execute("skip", params, signal, undefined, context);
+      await call();
+      await harness.command("on", ctx);
+      await call({ question: "Question?", options: [{}] } as any);
+      await call(undefined, { ...ctx, hasUI: false });
+      await call(undefined, { ...ctx, mode: "rpc" });
+      await call(undefined, ctx, AbortSignal.abort());
+      expect(focusTerminal).not.toHaveBeenCalled();
+   });
+
+   it("does not open a question when cancelled during activation", async () => {
+      vi.mocked(shouldFocusTerminal).mockReturnValue(true);
+      const controller = new AbortController();
+      vi.mocked(focusTerminal).mockImplementation(async () => { controller.abort(); });
+      const harness = await createHarness();
+      const ctx = createContext();
+      await harness.command("on", ctx);
+      const result = await harness.tool.execute("abort-focus", { question: "Question?" }, controller.signal, undefined, ctx);
+      expect(result.details.cancelled).toBe(true);
+      expect(ctx.ui.input).not.toHaveBeenCalled();
+      await harness.command("off", ctx);
+      expect(harness.activeTools()).not.toContain("ask_user");
    });
 
    it("auto-disables after the configured period of inactivity", async () => {

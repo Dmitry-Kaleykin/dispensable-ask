@@ -29,6 +29,8 @@ input.
 - The timeout is global and persists across sessions; the enabled state does
   not persist.
 - While a question is open, the exposure toggle is intentionally inactive.
+- On macOS with Apple Terminal, a question brings the tab running Pi and its
+  window to the foreground before the idle timer starts.
 
 The question UI supports single choice, multiple choice, searchable options,
 free-form answers, context, optional comments, and overlay or inline display.
@@ -72,6 +74,31 @@ milliseconds (`1500ms`), or minutes (`2m`). The accepted range is 1 second to
 
 On macOS, **Alt is the Option key**, so the default shortcut is **Option+A**
 (`⌥A`). Pi and its documentation use the cross-platform name `Alt+A`.
+
+## Bring Terminal forward on a question
+
+In local interactive Pi sessions running in Apple Terminal on macOS, opening
+`ask_user` selects the tab running Pi, restores its window if minimized, and
+brings it forward. This happens once per question, before the idle countdown.
+It does not keep the window permanently on top.
+
+To switch to the desktop containing that window, enable **System Settings →
+Desktop & Dock → Mission Control → When switching to an application, switch
+to a Space with open windows for the application**. The extension does not
+change this system preference.
+
+macOS may request Automation permission to control Terminal on first use.
+Activation is best effort and bounded to four seconds; if permission is denied
+or the tab cannot be found, the question still opens normally. SSH, tmux,
+screen, other terminal apps, and non-TUI sessions skip activation.
+
+To disable this behavior, set the following before starting Pi:
+
+```sh
+export DISPENSABLE_ASK_FOCUS_TERMINAL=false
+```
+
+The model cannot override this preference.
 
 ## Global configuration
 
@@ -131,6 +158,7 @@ src/
 ├── ask-user/
 │   ├── constants.ts                  model-visible tool identity
 │   ├── idle-timeout.ts               restartable inactivity timer
+│   ├── terminal-focus.ts             macOS Terminal tab activation
 │   ├── register-tool.ts              Pi tool schema and execution
 │   ├── dialogs.ts                    RPC/headless fallback
 │   ├── model.ts                      inputs, results, normalization
