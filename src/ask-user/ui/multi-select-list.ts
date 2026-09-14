@@ -3,6 +3,7 @@ import {
   type Component, Key, type KeybindingsManager, matchesKey,
   truncateToWidth, wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { OptionScroll } from "./option-scroll";
 import type { QuestionOption } from "./single-select-layout";
 import {
   COMMENT_TOGGLE_LABEL, type ResolvedShortcut, matchesSelectDown, matchesSelectUp,
@@ -16,6 +17,7 @@ export class MultiSelectList implements Component {
    private keybindings: KeybindingsManager;
    private commentToggle: ResolvedShortcut;
    private selectedIndex = 0;
+   private optionScroll = new OptionScroll();
    private checked = new Set<number>();
    private commentEnabled = false;
    private maxVisibleRows = 10;
@@ -98,6 +100,11 @@ export class MultiSelectList implements Component {
          return;
       }
 
+      if (this.optionScroll.handleInput(data)) {
+         this.invalidate();
+         return;
+      }
+
       const count = this.getItemCount();
       if (count === 0) {
          this.onCancel?.();
@@ -110,12 +117,14 @@ export class MultiSelectList implements Component {
       }
 
       if (matchesSelectUp(data, this.keybindings)) {
+         this.optionScroll.reset();
          this.selectedIndex = this.selectedIndex === 0 ? count - 1 : this.selectedIndex - 1;
          this.invalidate();
          return;
       }
 
       if (matchesSelectDown(data, this.keybindings)) {
+         this.optionScroll.reset();
          this.selectedIndex = this.selectedIndex === count - 1 ? 0 : this.selectedIndex + 1;
          this.invalidate();
          return;
@@ -126,6 +135,7 @@ export class MultiSelectList implements Component {
          const idx = Number.parseInt(numMatch[0], 10) - 1;
          if (idx >= 0 && idx < this.options.length) {
             this.toggle(idx);
+            this.optionScroll.reset();
             this.selectedIndex = Math.min(idx, count - 1);
             this.invalidate();
          }
@@ -218,11 +228,11 @@ export class MultiSelectList implements Component {
             : theme.fg("text", theme.bold(option.title));
 
          const firstLine = `${prefix} ${num} ${checkbox} ${title}`;
-         block.push(truncateToWidth(firstLine, width, ""));
+         block.push(...wrapTextWithAnsi(firstLine, Math.max(1, width)));
 
          if (option.description) {
             const indent = "      ";
-            const wrapWidth = Math.max(10, width - indent.length);
+            const wrapWidth = Math.max(1, width - indent.length);
             const wrapped = wrapTextWithAnsi(option.description, wrapWidth);
             for (const w of wrapped) {
                block.push(truncateToWidth(indent + theme.fg("muted", w), width, ""));
@@ -237,14 +247,16 @@ export class MultiSelectList implements Component {
       let lines: string[];
 
       if (totalRows <= maxRows) {
+         this.optionScroll.reset();
          lines = blocks.flat();
       } else {
          const availableRows = maxRows > 1 ? maxRows - 1 : 1;
          const selectedBlock = blocks[this.selectedIndex] ?? blocks[0] ?? [];
 
          if (selectedBlock.length >= availableRows) {
-            lines = selectedBlock.slice(0, availableRows);
+            lines = this.optionScroll.render(selectedBlock, availableRows, width);
          } else {
+            this.optionScroll.reset();
             let startIndex = this.selectedIndex;
             let endIndex = this.selectedIndex + 1;
             let usedRows = selectedBlock.length;

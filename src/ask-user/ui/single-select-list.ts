@@ -3,6 +3,7 @@ import {
   type Component, CURSOR_MARKER, decodeKittyPrintable, fuzzyFilter, Key, Markdown,
   type KeybindingsManager, matchesKey, truncateToWidth, wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { OptionScroll } from "./option-scroll";
 import type { AskSingleSelectLayout } from "../model";
 import { renderSingleSelectRows, type QuestionOption } from "./single-select-layout";
 import {
@@ -21,6 +22,7 @@ export class WrappedSingleSelectList implements Component {
    private keybindings: KeybindingsManager;
    private commentToggle: ResolvedShortcut;
    private selectedIndex = 0;
+   private optionScroll = new OptionScroll();
    private searchQuery = "";
    private commentEnabled = false;
    private maxVisibleRows = 12;
@@ -91,6 +93,7 @@ export class WrappedSingleSelectList implements Component {
    private setSearchQuery(query: string): void {
       this.searchQuery = query;
       this.selectedIndex = 0;
+      this.optionScroll.reset();
       this.invalidate();
    }
 
@@ -165,7 +168,9 @@ export class WrappedSingleSelectList implements Component {
       const lines: string[] = [];
       const count = this.getItemCount(filteredOptions);
       const searchValue = this.searchQuery ? this.theme.fg("text", this.searchQuery) : this.theme.fg("dim", "type to filter");
-      lines.push(truncateToWidth(`${this.theme.fg("accent", "Filter:")} ${searchValue}`, width, ""));
+      if (this.maxVisibleRows > 1 || count === 0) {
+         lines.push(truncateToWidth(`${this.theme.fg("accent", "Filter:")} ${searchValue}`, width, ""));
+      }
 
       if (this.searchQuery && filteredOptions.length === 0) {
          lines.push(truncateToWidth(this.theme.fg("warning", "No matching options"), width, ""));
@@ -188,6 +193,7 @@ export class WrappedSingleSelectList implements Component {
          commentEnabled: this.commentEnabled,
          maxRows,
          hideDescriptions,
+         scroll: hideDescriptions ? undefined : this.optionScroll,
       });
       const optionLines = optionRows.map((row) => this.styleListLine(row.line, width, row.selected));
 
@@ -246,12 +252,7 @@ export class WrappedSingleSelectList implements Component {
          lines.pop();
       }
 
-      if (lines.length <= maxLines) return lines;
-      if (maxLines === 1) return [truncateToWidth(this.theme.fg("dim", "…"), width, "")];
-
-      const visibleLines = lines.slice(0, maxLines - 1);
-      visibleLines.push(truncateToWidth(this.theme.fg("dim", "…"), width, ""));
-      return visibleLines;
+      return this.optionScroll.render(lines, maxLines, width);
    }
 
    handleInput(data: string): void {
@@ -270,16 +271,23 @@ export class WrappedSingleSelectList implements Component {
          return;
       }
 
+      if (this.optionScroll.handleInput(data)) {
+         this.invalidate();
+         return;
+      }
+
       const filteredOptions = this.getFilteredOptions();
       const count = this.getItemCount(filteredOptions);
 
       if (matchesSelectUp(data, this.keybindings) && count > 0) {
+         this.optionScroll.reset();
          this.selectedIndex = this.selectedIndex === 0 ? count - 1 : this.selectedIndex - 1;
          this.invalidate();
          return;
       }
 
       if (matchesSelectDown(data, this.keybindings) && count > 0) {
+         this.optionScroll.reset();
          this.selectedIndex = this.selectedIndex === count - 1 ? 0 : this.selectedIndex + 1;
          this.invalidate();
          return;
@@ -289,6 +297,7 @@ export class WrappedSingleSelectList implements Component {
       if (numMatch && filteredOptions.length > 0) {
          const idx = Number.parseInt(numMatch[0], 10) - 1;
          if (idx >= 0 && idx < filteredOptions.length) {
+            this.optionScroll.reset();
             this.selectedIndex = idx;
             this.invalidate();
             return;

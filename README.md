@@ -70,6 +70,13 @@ Timeout values may be plain seconds (`30`), seconds with a suffix (`45s`),
 milliseconds (`1500ms`), or minutes (`2m`). The accepted range is 1 second to
 24 hours.
 
+Long option titles and descriptions wrap to the available width. When the
+highlighted option is taller than its pane, use `Shift+↑` / `Shift+↓` to scroll
+through it, or `Shift+PgUp` / `Shift+PgDn` to scroll by a page. This works in
+single-choice lists, the split preview, and multiple-choice lists. An overflow
+hint shows your position; moving to another option starts at the top. Plain
+`↑` / `↓` still changes options, and `PgUp` / `PgDn` scrolls the question/context.
+
 ## macOS keyboard name
 
 On macOS, **Alt is the Option key**, so the default shortcut is **Option+A**

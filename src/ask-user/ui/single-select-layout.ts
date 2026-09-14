@@ -1,3 +1,6 @@
+import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import type { OptionScroll } from "./option-scroll";
+
 export interface QuestionOption {
 	title: string;
 	description?: string;
@@ -17,50 +20,11 @@ export interface RenderSingleSelectRowsParams {
 	commentEnabled?: boolean;
 	maxRows?: number;
 	hideDescriptions?: boolean;
+	scroll?: OptionScroll;
 }
 
 function wrapText(text: string, width: number): string[] {
-	const normalized = text.replace(/\s+/g, " ").trim();
-	if (!normalized) return [""];
-	if (width <= 1) return normalized.split("");
-
-	const words = normalized.split(" ");
-	const lines: string[] = [];
-	let current = "";
-
-	for (const word of words) {
-		if (!current) {
-			if (word.length <= width) {
-				current = word;
-			} else {
-				for (let i = 0; i < word.length; i += width) {
-					lines.push(word.slice(i, i + width));
-				}
-			}
-			continue;
-		}
-
-		const candidate = `${current} ${word}`;
-		if (candidate.length <= width) {
-			current = candidate;
-			continue;
-		}
-
-		lines.push(current);
-		if (word.length <= width) {
-			current = word;
-		} else {
-			current = "";
-			for (let i = 0; i < word.length; i += width) {
-				const chunk = word.slice(i, i + width);
-				if (chunk.length === width || i + width < word.length) lines.push(chunk);
-				else current = chunk;
-			}
-		}
-	}
-
-	if (current) lines.push(current);
-	return lines;
+	return wrapTextWithAnsi(text, Math.max(1, width));
 }
 
 function padLine(prefix: string, content: string): string {
@@ -150,12 +114,14 @@ export function renderSingleSelectRows({
 	commentEnabled = false,
 	maxRows,
 	hideDescriptions,
+	scroll,
 }: RenderSingleSelectRowsParams): AnnotatedRow[] {
 	const itemCount = options.length + (allowComment ? 1 : 0) + (allowFreeform ? 1 : 0);
 	const blocks = buildItemBlocks(options, width, allowFreeform, allowComment, commentEnabled, selectedIndex, hideDescriptions);
 	const allRows = flatten(blocks, selectedIndex);
 
 	if (!Number.isFinite(maxRows) || !maxRows || maxRows <= 0 || allRows.length <= maxRows) {
+		scroll?.reset();
 		return allRows;
 	}
 
@@ -167,7 +133,8 @@ export function renderSingleSelectRows({
 	const availableRows = safeMaxRows > 1 ? safeMaxRows - 1 : 1;
 
 	if (selectedBlock.lines.length >= availableRows) {
-		const visible = selectedBlock.lines.slice(0, availableRows).map((line) => ({
+		const visible = (scroll?.render(selectedBlock.lines, availableRows, width)
+			?? selectedBlock.lines.slice(0, availableRows)).map((line) => ({
 			line,
 			selected: true,
 		}));
@@ -175,6 +142,7 @@ export function renderSingleSelectRows({
 		return visible.slice(0, safeMaxRows);
 	}
 
+	scroll?.reset();
 	let start = selectedIndex;
 	let end = selectedIndex + 1;
 	let usedRows = selectedBlock.lines.length;
