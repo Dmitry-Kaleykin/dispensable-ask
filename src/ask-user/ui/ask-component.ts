@@ -589,7 +589,7 @@ export class AskComponent extends Container {
       if (this.allowMultiple) {
          const hints = [
             literalHint(theme, "↑↓", "navigate"),
-            literalHint(theme, "Shift+↑↓", "scroll option"),
+            literalHint(theme, "←/→", "scroll option"),
             literalHint(theme, "space", "toggle"),
             commentHint,
             contextHint,
@@ -607,12 +607,12 @@ export class AskComponent extends Container {
             .filter((key) => key !== "escape" && key !== "esc");
          const hints = [
             literalHint(theme, "type", "filter"),
+            literalHint(theme, "←/→", "scroll option"),
             commentHint,
             contextHint,
             promptScrollHint,
             keybindingHint(theme, this.keybindings, "tui.editor.deleteCharBackward", "erase"),
             literalHint(theme, "↑↓", "navigate"),
-            literalHint(theme, "Shift+↑↓", "scroll option"),
             overlayHint,
             keybindingHint(theme, this.keybindings, "tui.select.confirm", "select"),
             literalHint(theme, "esc", "clear/cancel"),

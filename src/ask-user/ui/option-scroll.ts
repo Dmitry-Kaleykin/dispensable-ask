@@ -13,8 +13,10 @@ export class OptionScroll {
 
    handleInput(data: string): boolean {
       let delta: number;
-      if (matchesKey(data, Key.shift("up"))) delta = -1;
-      else if (matchesKey(data, Key.shift("down"))) delta = 1;
+      // Use unmodified keys: some terminals send Shift+Up/Down as plain
+      // Up/Down, making those combinations indistinguishable from navigation.
+      if (matchesKey(data, Key.left) || matchesKey(data, Key.shift("up"))) delta = -1;
+      else if (matchesKey(data, Key.right) || matchesKey(data, Key.shift("down"))) delta = 1;
       else if (matchesKey(data, Key.shift("pageUp"))) delta = -this.pageRows;
       else if (matchesKey(data, Key.shift("pageDown"))) delta = this.pageRows;
       else return false;
@@ -36,7 +38,7 @@ export class OptionScroll {
       if (overflows && rows > 1) {
          const direction = this.offset === 0 ? "↓" : this.offset === this.maxOffset ? "↑" : "↕";
          visible.push(truncateToWidth(
-            `${direction} Shift+↑↓ scroll · ${this.offset + 1}–${this.offset + visible.length}/${lines.length}`,
+            `${direction} ←/→ scroll · ${this.offset + 1}–${this.offset + visible.length}/${lines.length}`,
             width, "",
          ));
       }

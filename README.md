@@ -71,11 +71,13 @@ milliseconds (`1500ms`), or minutes (`2m`). The accepted range is 1 second to
 24 hours.
 
 Long option titles and descriptions wrap to the available width. When the
-highlighted option is taller than its pane, use `Shift+↑` / `Shift+↓` to scroll
+highlighted option is taller than its pane, use `←` / `→` to scroll up/down
 through it, or `Shift+PgUp` / `Shift+PgDn` to scroll by a page. This works in
 single-choice lists, the split preview, and multiple-choice lists. An overflow
 hint shows your position; moving to another option starts at the top. Plain
 `↑` / `↓` still changes options, and `PgUp` / `PgDn` scrolls the question/context.
+`Shift+↑` / `Shift+↓` also works when the terminal preserves the Shift modifier;
+use `←` / `→` if those combinations move between options instead.
 
 ## macOS keyboard name
 

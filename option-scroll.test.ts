@@ -14,8 +14,8 @@ const options = [
    { title: "First option", description },
    { title: "Second option", description: "Second details" },
 ];
-const shiftDown = "\x1b[1;2B";
-const shiftUp = "\x1b[1;2A";
+const scrollDown = "\x1b[C";
+const scrollUp = "\x1b[D";
 const shiftPageDown = "\x1b[6;2~";
 const shiftPageUp = "\x1b[5;2~";
 
@@ -34,14 +34,14 @@ for (const kind of ["list", "preview", "multi"] as const) {
          list.onSubmit = submit;
          list.setMaxVisibleRows(8);
          let lines = list.render(width);
-         expect(lines.join("\n")).toContain("Shift+↑↓");
+         expect(lines.join("\n")).toContain("←/→");
          expect(lines.join("\n")).not.toContain("Detail-34");
          const seen = new Set<number>();
          for (let step = 0; step < 100; step++) {
             for (const match of lines.join("\n").matchAll(/Detail-(\d+)/g)) seen.add(Number(match[1]));
             expect(lines.length).toBeLessThanOrEqual(8);
             expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
-            list.handleInput(shiftDown);
+            list.handleInput(scrollDown);
             lines = list.render(width);
          }
          expect(seen.size).toBe(35);
@@ -58,7 +58,7 @@ for (const kind of ["list", "preview", "multi"] as const) {
          expect(list.render(width)).not.toEqual(first);
          list.handleInput(shiftPageUp);
          expect(list.render(width)).toEqual(first);
-         list.handleInput(shiftUp);
+         list.handleInput(scrollUp);
          expect(list.render(width)).toEqual(first);
          list.handleInput(shiftPageDown);
          list.render(width);
@@ -66,6 +66,26 @@ for (const kind of ["list", "preview", "multi"] as const) {
          expect(list.render(width).join("\n")).toContain("Second details");
          list.handleInput("\x1b[A");
          expect(list.render(width)).toEqual(first);
+      });
+
+      it.each([
+         ["normal arrows", "\x1b[D", "\x1b[C"],
+         ["application-mode arrows", "\x1bOD", "\x1bOC"],
+         ["extended arrows", "\x1b[1;1D", "\x1b[1;1C"],
+         ["legacy Shift aliases", "\x1b[1;2A", "\x1b[1;2B"],
+      ])("scrolls with %s without navigating or submitting", (_label, up, down) => {
+         const list = createList(kind);
+         const submit = vi.fn();
+         list.onSubmit = submit;
+         list.setMaxVisibleRows(8);
+         const initial = list.render(width);
+         list.handleInput(down);
+         expect(list.render(width)).not.toEqual(initial);
+         list.handleInput(up);
+         expect(list.render(width)).toEqual(initial);
+         expect(submit).not.toHaveBeenCalled();
+         list.handleInput("\r");
+         expect(submit).toHaveBeenCalledWith(kind === "multi" ? ["First option"] : "First option");
       });
 
       it("clamps scrolling after resize and preserves Unicode text", () => {
@@ -76,12 +96,12 @@ for (const kind of ["list", "preview", "multi"] as const) {
             const lines = list.render(width);
             expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
             content += lines.join("\n");
-            list.handleInput(shiftDown);
+            list.handleInput(scrollDown);
          }
          expect(content).toContain("END");
          list.setMaxVisibleRows(100);
          expect(list.render(160).join("\n")).toContain("Title");
-         expect(list.render(160).join("\n")).not.toContain("Shift+↑↓");
+         expect(list.render(160).join("\n")).not.toContain("←/→");
       });
    });
 }
@@ -107,7 +127,7 @@ it.each([1, 2, 3])("keeps content reachable with only %i rows", (rows) => {
          const lines = list.render(100);
          expect(lines.length).toBeLessThanOrEqual(rows);
          seen += lines.join("\n");
-         list.handleInput(shiftDown);
+         list.handleInput(scrollDown);
       }
       expect(seen).toContain("Detail-34");
    }
@@ -131,7 +151,7 @@ it.each([
       if (mode === "overlay") expect(lines.length).toBeLessThanOrEqual(Math.floor(rows * 0.85));
       expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
       seen += lines.join("\n");
-      component.handleInput(shiftDown);
+      component.handleInput(scrollDown);
    }
    expect(seen).toContain("Detail-34");
    expect(onDone).not.toHaveBeenCalled();
@@ -167,7 +187,7 @@ it("scrolls the rendered Markdown preview to its final paragraph", () => {
       expect(lines.length).toBeLessThanOrEqual(8);
       expect(lines.every((line) => visibleWidth(line) <= 100)).toBe(true);
       seen += lines.join("\n");
-      list.handleInput(shiftDown);
+      list.handleInput(scrollDown);
    }
    expect(seen).toContain("FINAL PARAGRAPH");
 });
