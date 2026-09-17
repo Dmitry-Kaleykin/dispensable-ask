@@ -40,7 +40,7 @@ How it works:
 - Provide options when the answer is one of a few concrete choices; the user picks from them (or more, if allowMultiple is true). Omit options to get a freeform text answer.
 - Even with options, the user can still answer in freeform by default.
 - Call ask_user on its own, not batched with other tool calls: while a question is open the turn's tool calls run one at a time, so side-effecting calls should not be queued behind it.
-- The user controls an optional inactivity timer. When the timer is disabled, wait indefinitely for their answer. When it is enabled, an unanswered question times out; continue with your best judgment and do not retry the same question.`;
+- An unanswered question times out; continue with your best judgment and do not retry the same question.`;
 
 export function registerAskUserTool(pi: ExtensionAPI, timer: AskTimer): void {
    pi.registerTool({
