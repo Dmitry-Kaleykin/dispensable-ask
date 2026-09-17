@@ -1,36 +1,34 @@
 # dispensable-ask
 
-`dispensable-ask` is a Pi extension that exposes the model-visible
-`ask_user` tool only when you want it. It is designed for local models
-that sometimes reconsider the same decision instead of asking for the missing
-input.
+`dispensable-ask` is a Pi extension that provides the model-visible
+`ask_user` tool with an optional inactivity timer. It is designed for local
+models that sometimes reconsider the same decision instead of asking for the
+missing input.
 
 ## Behavior
 
-- Starts **disabled** in every session.
-- Press `Alt+A` to expose or hide `ask_user`.
+- The tool is always available; the **timer starts disabled** in every session.
+- Press `Alt+A` to enable or disable the timer.
+- With the timer disabled, questions wait indefinitely for your answer.
+- With the timer enabled, questions time out after 30 seconds of inactivity
+  by default, allowing the model to continue without your answer.
 - The shortcut remains available while Pi is streaming an answer or thinking.
-- An in-flight model request may already have received the tool schema; when
-  you disable it, the extension also blocks any stale tool call from that
-  request.
-- Questions time out after 30 seconds of inactivity by default.
-- While a question is open, the status widget shows the remaining idle time.
-  It jumps back to the configured limit whenever you interact. Outside an
-  active question, the widget shows only `❓ ask:on` or `❓ ask:off`.
+- While a timed question is open, the status widget shows the remaining idle
+  time. It jumps back to the configured limit whenever you interact. Otherwise,
+  the widget shows only `❓ ask timer:on` or `❓ ask timer:off`.
 - The status is painted in the theme's accent colour, like the `🔌 MCP: …`
   and `🔒 Sandbox: …` statuses next to it. Pi prints footer status text
   verbatim, so the extension applies the colour itself.
 - Typing, navigating options, toggling a choice, or interacting with the prompt
-  restarts the idle timer. If you stop midway, a fresh 30-second window begins
-  after your last action.
-- A timeout disables the tool for the rest of that session. Only you can
-  re-enable it.
-- Escape cancels the current question without changing the enabled state.
-- The timeout is global and persists across sessions; the enabled state does
-  not persist.
-- While a question is open, the exposure toggle is intentionally inactive.
+  restarts an enabled idle timer. If you stop midway, a fresh 30-second window
+  begins after your last action.
+- A timeout leaves the tool available and the timer enabled for future questions.
+- Escape cancels the current question without changing the timer state.
+- The timeout duration is global and persists across sessions; the timer's
+  enabled state does not persist.
+- While a question is open, the timer toggle is intentionally inactive.
 - On macOS with Apple Terminal, a question brings the tab running Pi and its
-  window to the foreground before the idle timer starts.
+  window to the foreground before any idle timer starts.
 
 The question UI supports single choice, multiple choice, searchable options,
 free-form answers, context, optional comments, and overlay or inline display.
@@ -59,11 +57,11 @@ pi -e /Users/donais/Documents/Projects/dispensable-ask
 
 | Action | Control |
 | --- | --- |
-| Toggle exposure | `Alt+A` |
+| Toggle timer | `Alt+A` |
 | Show current state | `/dispensable-ask` |
-| Enable | `/dispensable-ask on` |
-| Disable | `/dispensable-ask off` |
-| Toggle | `/dispensable-ask toggle` |
+| Enable timer | `/dispensable-ask on` |
+| Disable timer (wait indefinitely) | `/dispensable-ask off` |
+| Toggle timer | `/dispensable-ask toggle` |
 | Set global timeout | `/dispensable-ask timeout 45s` |
 
 Timeout values may be plain seconds (`30`), seconds with a suffix (`45s`),
@@ -161,9 +159,9 @@ index.ts                              package entry point
 src/
 ├── extension/
 │   ├── register-dispensable-ask.ts   composition root
-│   ├── ask-exposure.ts               session-local exposure state
+│   ├── ask-timer.ts                  session-local timer state
 │   ├── status.ts                     footer status text and accent colour
-│   └── register-controls.ts          shortcut, command, lifecycle guards
+│   └── register-controls.ts          shortcut, command, session lifecycle
 ├── ask-user/
 │   ├── constants.ts                  model-visible tool identity
 │   ├── idle-timeout.ts               restartable inactivity timer
@@ -182,7 +180,7 @@ src/
 ```
 
 `extension/` owns Pi lifecycle policy, while `ask-user/` owns the feature.
-The UI does not manage exposure or persistence, and configuration does not
+The UI does not manage timer settings or persistence, and configuration does not
 depend on the TUI.
 
 The interactive UI is adapted from

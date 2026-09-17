@@ -6,9 +6,9 @@ export const STATUS_KEY = "dispensable-ask";
 /** Leading glyph, matching the icon-first style of the other footer statuses. */
 export const STATUS_ICON = "❓";
 
-/** Plain footer text, for example `❓ ask:on` or `❓ ask:on · 12s`. */
+/** Plain footer text, for example `❓ ask timer:on` or `❓ ask timer:on · 12s`. */
 export function formatStatusText(enabled: boolean, remainingSeconds?: number): string {
-   const state = `ask:${enabled ? "on" : "off"}`;
+   const state = `ask timer:${enabled ? "on" : "off"}`;
    const text = remainingSeconds === undefined ? state : `${state} · ${remainingSeconds}s`;
    return `${STATUS_ICON} ${text}`;
 }

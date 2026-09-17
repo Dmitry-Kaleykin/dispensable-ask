@@ -4,7 +4,7 @@ import {
   type KeybindingsManager, type OverlayHandle, Text, type TUI,
 } from "@earendil-works/pi-tui";
 import { formatTimeout } from "../config/config";
-import type { AskExposure } from "../extension/ask-exposure";
+import type { AskTimer } from "../extension/ask-timer";
 import { MODEL_TOOL_NAME } from "./constants";
 import { askViaDialogs, runDialogWithIdleTimeout } from "./dialogs";
 import { IdleTimeout } from "./idle-timeout";
@@ -31,7 +31,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
     "Provide options when the answer is one of a few concrete choices; omit them so the user can answer freely when the question is open-ended.",
     "Call ask_user on its own turn; do not batch it with other tool calls, since the turn's tool calls run sequentially and are blocked until the user answers.",
     "Do not ask for confirmation of a decision the user already made.",
-    "If ask_user times out or is disabled, continue with your best judgment instead of retrying.",
+    "If ask_user times out, continue with your best judgment instead of retrying the same question.",
 ];
 
 export const DEFAULT_TOOL_DESCRIPTION = `Ask the user a structured question and wait for their answer. Use it to clarify ambiguous instructions, gather preferences, or get a decision on how to proceed.
@@ -40,9 +40,9 @@ How it works:
 - Provide options when the answer is one of a few concrete choices; the user picks from them (or more, if allowMultiple is true). Omit options to get a freeform text answer.
 - Even with options, the user can still answer in freeform by default.
 - Call ask_user on its own, not batched with other tool calls: while a question is open the turn's tool calls run one at a time, so side-effecting calls should not be queued behind it.
-- The user may not answer; on timeout the tool is disabled for the rest of the session. Continue with your best judgment and do not retry.`;
+- The user controls an optional inactivity timer. When the timer is disabled, wait indefinitely for their answer. When it is enabled, an unanswered question times out; continue with your best judgment and do not retry the same question.`;
 
-export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): void {
+export function registerAskUserTool(pi: ExtensionAPI, timer: AskTimer): void {
    pi.registerTool({
       name: MODEL_TOOL_NAME,
       label: "Dispensable Ask",
@@ -88,14 +88,6 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
       }),
 
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
-         if (!exposure.enabled) {
-            return {
-               content: [{ type: "text", text: "ask_user is disabled; continue without asking the user" }],
-               isError: true,
-               details: { error: "Tool disabled for this session" },
-            };
-         }
-
          if (signal?.aborted) {
             return {
                content: [{ type: "text", text: "Cancelled" }],
@@ -103,7 +95,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
             };
          }
 
-         exposure.activeAsk = true;
+         timer.activeAsk = true;
          try {
          const {
             question,
@@ -113,13 +105,13 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
             allowFreeform = true,
             allowComment: requestedAllowComment,
          } = params as AskParams;
-         const timeout = exposure.config.timeoutSeconds * 1000;
+         const timeout = timer.enabled ? timer.config.timeoutSeconds * 1000 : undefined;
          let timedOut = false;
          const markTimedOut = () => {
             timedOut = true;
          };
          const showCountdown = (remainingSeconds: number) => {
-            exposure.showCountdown(ctx, remainingSeconds);
+            timer.showCountdown(ctx, remainingSeconds);
          };
          const envMode = process.env.DISPENSABLE_ASK_DISPLAY_MODE?.trim().toLowerCase();
          const envDisplayMode: AskDisplayMode | undefined =
@@ -209,11 +201,11 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
 
             if (!response) {
                if (timedOut) {
-                  exposure.disableAfterTimeout(ctx);
+                  timer.notifyTimeout(ctx);
                   return {
                      content: [{
                         type: "text",
-                        text: `No answer was received within ${formatTimeout(exposure.config.timeoutSeconds)}. ask_user is now disabled for this session. Continue using your best judgment and do not retry unless the user manually re-enables it.`,
+                        text: `No answer was received within ${formatTimeout(timer.config.timeoutSeconds)}. Continue using your best judgment and do not retry the same question.`,
                      }],
                      details: {
                         question,
@@ -256,11 +248,13 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
                   signal.addEventListener("abort", onAbort, { once: true });
                }
 
-               idleTimeout = new IdleTimeout(timeout, () => {
-                  markTimedOut();
-                  done(null);
-               }, showCountdown);
-               idleTimeout.start();
+               if (timeout !== undefined) {
+                  idleTimeout = new IdleTimeout(timeout, () => {
+                     markTimedOut();
+                     done(null);
+                  }, showCountdown);
+                  idleTimeout.start();
+               }
 
                return new AskComponent(
                   question,
@@ -344,12 +338,12 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
 
          if (result === null) {
             if (timedOut) {
-               exposure.disableAfterTimeout(ctx);
+               timer.notifyTimeout(ctx);
                pi.events.emit("dispensable-ask:timeout", { question, context: normalizedContext, options });
                return {
                   content: [{
                      type: "text",
-                     text: `No answer was received within ${formatTimeout(exposure.config.timeoutSeconds)}. ask_user is now disabled for this session. Continue using your best judgment and do not retry unless the user manually re-enables it.`,
+                     text: `No answer was received within ${formatTimeout(timer.config.timeoutSeconds)}. Continue using your best judgment and do not retry the same question.`,
                   }],
                   details: {
                      question,
@@ -384,8 +378,8 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
             } as AskToolDetails,
          };
          } finally {
-            exposure.activeAsk = false;
-            if (ctx.ui) exposure.refreshStatus(ctx);
+            timer.activeAsk = false;
+            if (ctx.ui) timer.refreshStatus(ctx);
          }
       },
 
@@ -423,7 +417,7 @@ export function registerAskUserTool(pi: ExtensionAPI, exposure: AskExposure): vo
          }
 
          if (details?.timedOut) {
-            return new Text(theme.fg("warning", `Timed out; disabled for this session`), 0, 0);
+            return new Text(theme.fg("warning", "Timed out"), 0, 0);
          }
 
          if (!details || details.cancelled || !details.response) {

@@ -23,14 +23,14 @@ interface DialogUI {
  */
 export async function runDialogWithIdleTimeout<T>(
    ui: DialogUI,
-   timeoutMs: number,
+   timeoutMs: number | undefined,
    onTimeout: () => void,
    operation: (options: DialogOptions) => Promise<T>,
    parentSignal?: AbortSignal,
    onTick?: (remainingSeconds: number) => void,
 ): Promise<T | undefined> {
    const dialogAbort = new AbortController();
-   const idleTimeout = new IdleTimeout(timeoutMs, () => {
+   const idleTimeout = timeoutMs === undefined ? undefined : new IdleTimeout(timeoutMs, () => {
       onTimeout();
       dialogAbort.abort();
    }, onTick);
@@ -43,16 +43,16 @@ export async function runDialogWithIdleTimeout<T>(
 
    // TUI dialogs do not expose their editor directly. Raw input observation
    // lets typing and navigation reset the idle clock without consuming input.
-   const removeInputListener = ui.onTerminalInput?.(() => {
+   const removeInputListener = idleTimeout ? ui.onTerminalInput?.(() => {
       idleTimeout.touch();
       return undefined;
-   });
+   }) : undefined;
 
-   idleTimeout.start();
+   idleTimeout?.start();
    try {
       return await operation({ signal: dialogAbort.signal });
    } finally {
-      idleTimeout.stop();
+      idleTimeout?.stop();
       removeInputListener?.();
       parentSignal?.removeEventListener("abort", abortFromParent);
    }
@@ -66,7 +66,7 @@ export async function askViaDialogs(
    allowMultiple: boolean,
    allowFreeform: boolean,
    allowComment: boolean,
-   timeoutMs: number,
+   timeoutMs: number | undefined,
    onTimeout: () => void,
    signal?: AbortSignal,
    onTick?: (remainingSeconds: number) => void,

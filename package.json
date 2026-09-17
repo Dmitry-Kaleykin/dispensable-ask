@@ -1,7 +1,7 @@
 {
   "name": "dispensable-ask",
   "version": "0.1.0",
-  "description": "A timeout-bounded, user-toggleable question tool for Pi agents",
+  "description": "A question tool with a user-toggleable inactivity timer for Pi agents",
   "type": "module",
   "private": true,
   "keywords": [

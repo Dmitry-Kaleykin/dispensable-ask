@@ -1,15 +1,13 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { formatTimeout, type DispensableAskConfig } from "../config/config";
-import { MODEL_TOOL_NAME } from "../ask-user/constants";
 import { renderStatus, STATUS_KEY } from "./status";
 
-/** Owns session-local exposure state; global configuration is injected. */
-export class AskExposure {
+/** Owns session-local timer state; global configuration is injected. */
+export class AskTimer {
    public activeAsk = false;
    public enabled = false;
 
    public constructor(
-      private readonly pi: ExtensionAPI,
       public config: DispensableAskConfig,
    ) {}
 
@@ -23,29 +21,26 @@ export class AskExposure {
 
    public apply(nextEnabled: boolean): void {
       this.enabled = nextEnabled;
-      const activeTools = this.pi.getActiveTools().filter((name) => name !== MODEL_TOOL_NAME);
-      this.pi.setActiveTools(nextEnabled ? [...activeTools, MODEL_TOOL_NAME] : activeTools);
    }
 
    public setFromUser(nextEnabled: boolean, ctx: ExtensionContext): void {
       if (this.activeAsk) {
-         ctx.ui.notify("ask_user is waiting for an answer; its state was not changed", "warning");
+         ctx.ui.notify("ask_user is waiting for an answer; its timer state was not changed", "warning");
          return;
       }
 
       this.apply(nextEnabled);
       this.refreshStatus(ctx);
       ctx.ui.notify(
-         `ask_user ${nextEnabled ? "enabled" : "disabled"} for this session`,
-         nextEnabled ? "info" : "warning",
+         `ask_user timer ${nextEnabled ? "enabled" : "disabled (waits indefinitely)"} for this session`,
+         "info",
       );
    }
 
-   public disableAfterTimeout(ctx: ExtensionContext): void {
-      this.apply(false);
+   public notifyTimeout(ctx: ExtensionContext): void {
       this.refreshStatus(ctx);
       ctx.ui.notify(
-         `ask_user timed out after ${formatTimeout(this.config.timeoutSeconds)} and is disabled for this session`,
+         `ask_user timed out after ${formatTimeout(this.config.timeoutSeconds)} of inactivity`,
          "warning",
       );
    }
