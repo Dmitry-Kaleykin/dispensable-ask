@@ -13,9 +13,10 @@ missing input.
 - With the timer enabled, questions time out after 30 seconds of inactivity
   by default, allowing the model to continue without your answer.
 - The shortcut remains available while Pi is streaming an answer or thinking.
-- While a timed question is open, the status widget shows the remaining idle
-  time. It jumps back to the configured limit whenever you interact. Otherwise,
-  the widget shows only `❓ ask timer:on` or `❓ ask timer:off`.
+- While a timed question is open, its box header and the status widget show the
+  remaining idle time. It jumps back to the configured limit whenever you
+  interact. Otherwise, the widget shows only `❓ ask timer:on` or
+  `❓ ask timer:off`.
 - The status is painted in the theme's accent colour, like the `🔌 MCP: …`
   and `🔒 Sandbox: …` statuses next to it. Pi prints footer status text
   verbatim, so the extension applies the colour itself.

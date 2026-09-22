@@ -50,6 +50,7 @@ export class AskComponent extends Container {
    private promptViewportRows = 0;
    private contextIsCollapsible = false;
    private contextExpanded = false;
+   private remainingIdleSeconds: number | undefined;
 
    // Static layout components
    private titleText: Text;
@@ -158,6 +159,13 @@ export class AskComponent extends Container {
       super.invalidate();
       this.updateStaticText();
       this.updateHelpText();
+   }
+
+   /** Update the timer shown in the box header while a timed question is open. */
+   public setRemainingIdleSeconds(remainingSeconds: number | undefined): void {
+      if (remainingSeconds === this.remainingIdleSeconds) return;
+      this.remainingIdleSeconds = remainingSeconds;
+      this.tui.requestRender();
    }
 
    override render(width: number): string[] {
@@ -496,9 +504,12 @@ export class AskComponent extends Container {
    }
 
    private renderTopBorder(width: number): string {
+      const title = this.remainingIdleSeconds === undefined
+         ? "ask_user"
+         : `ask_user · idle timeout ${this.remainingIdleSeconds}s`;
       return new BoxBorderTop(
          (s: string) => this.theme.fg("accent", s),
-         "ask_user",
+         title,
          (s: string) => this.theme.fg("dim", this.theme.bold(s)),
       ).render(width)[0] ?? "";
    }

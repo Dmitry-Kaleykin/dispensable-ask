@@ -107,11 +107,13 @@ export function registerAskUserTool(pi: ExtensionAPI, timer: AskTimer): void {
          } = params as AskParams;
          const timeout = timer.enabled ? timer.config.timeoutSeconds * 1000 : undefined;
          let timedOut = false;
+         let askComponent: AskComponent | undefined;
          const markTimedOut = () => {
             timedOut = true;
          };
          const showCountdown = (remainingSeconds: number) => {
             timer.showCountdown(ctx, remainingSeconds);
+            askComponent?.setRemainingIdleSeconds(remainingSeconds);
          };
          const envMode = process.env.DISPENSABLE_ASK_DISPLAY_MODE?.trim().toLowerCase();
          const envDisplayMode: AskDisplayMode | undefined =
@@ -248,15 +250,7 @@ export function registerAskUserTool(pi: ExtensionAPI, timer: AskTimer): void {
                   signal.addEventListener("abort", onAbort, { once: true });
                }
 
-               if (timeout !== undefined) {
-                  idleTimeout = new IdleTimeout(timeout, () => {
-                     markTimedOut();
-                     done(null);
-                  }, showCountdown);
-                  idleTimeout.start();
-               }
-
-               return new AskComponent(
+               askComponent = new AskComponent(
                   question,
                   normalizedContext,
                   options,
@@ -272,6 +266,16 @@ export function registerAskUserTool(pi: ExtensionAPI, timer: AskTimer): void {
                   done,
                   () => idleTimeout?.touch(),
                );
+
+               if (timeout !== undefined) {
+                  idleTimeout = new IdleTimeout(timeout, () => {
+                     markTimedOut();
+                     done(null);
+                  }, showCountdown);
+                  idleTimeout.start();
+               }
+
+               return askComponent;
             };
 
             // Register a raw terminal input listener for the overlay-toggle key so the

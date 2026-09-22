@@ -160,6 +160,27 @@ it.each([
    expect(onDone).toHaveBeenCalledWith({ kind: "selection", selections: ["First option"] });
 });
 
+it("shows the remaining idle timeout in the question box header", () => {
+   const requestRender = vi.fn();
+   const component = new AskComponent(
+      "Which option?", undefined, options, false, true, false, "overlay", "auto",
+      { terminal: { rows: 24 }, requestRender } as unknown as TUI,
+      theme, keybindings, { commentToggle, overlayToggle: resolveShortcut(null, undefined, "alt+o") },
+      vi.fn(), vi.fn(),
+   );
+
+   expect(component.render(80)[0]).toContain("ask_user");
+   expect(component.render(80)[0]).not.toContain("idle timeout");
+   requestRender.mockClear();
+
+   component.setRemainingIdleSeconds(12);
+   expect(component.render(80)[0]).toContain("ask_user · idle timeout 12s");
+   expect(requestRender).toHaveBeenCalledOnce();
+
+   component.setRemainingIdleSeconds(12);
+   expect(requestRender).toHaveBeenCalledOnce();
+});
+
 for (const kind of ["list", "multi"] as const) {
    it(`wraps every character of long Unicode titles and descriptions (${kind})`, () => {
       const title = "Long-title-漢字🙂".repeat(5);
