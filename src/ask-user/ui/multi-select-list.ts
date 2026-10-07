@@ -19,6 +19,7 @@ export class MultiSelectList implements Component {
    private selectedIndex = 0;
    private optionScroll = new OptionScroll();
    private checked = new Set<number>();
+   private selectionEdited = false;
    private commentEnabled = false;
    private maxVisibleRows = 10;
    private cachedWidth?: number;
@@ -46,6 +47,11 @@ export class MultiSelectList implements Component {
 
    public isCommentEnabled(): boolean {
       return this.commentEnabled;
+   }
+
+   public getDraftSelections(): string[] | undefined {
+      if (!this.selectionEdited) return undefined;
+      return Array.from(this.checked).sort((a, b) => a - b).map((index) => this.options[index].title);
    }
 
    setMaxVisibleRows(rows: number): void {
@@ -84,6 +90,7 @@ export class MultiSelectList implements Component {
 
    private toggle(index: number): void {
       if (index < 0 || index >= this.options.length) return;
+      this.selectionEdited = true;
       if (this.checked.has(index)) this.checked.delete(index);
       else this.checked.add(index);
    }
@@ -172,10 +179,9 @@ export class MultiSelectList implements Component {
             .filter((t): t is string => !!t);
 
          const fallback = this.options[this.selectedIndex]?.title;
-         const result = selectedTitles.length > 0 ? selectedTitles : fallback ? [fallback] : [];
+         const result = selectedTitles.length > 0 ? selectedTitles : !this.selectionEdited && fallback ? [fallback] : [];
 
          if (result.length > 0) this.onSubmit?.(result);
-         else this.onCancel?.();
       }
    }
 

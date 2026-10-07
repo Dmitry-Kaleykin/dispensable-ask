@@ -1,6 +1,7 @@
 import type { QuestionOption } from "./ui/single-select-layout";
 import {
-  type AskUIResult, buildCommentPrompt, createFreeformResponse,
+  type AskUIResult, type AskBatchResult, type AskQuestion, type AskResponse,
+  buildCommentPrompt, createFreeformResponse, createBatchResult, formatResponseSummary,
   createSelectionResponse, formatOptionsForMessage, isCancelledInput,
   parseDialogSelections,
 } from "./model";
@@ -50,6 +51,7 @@ export async function runDialogWithIdleTimeout<T>(
 
    idleTimeout?.start();
    try {
+      if (dialogAbort.signal.aborted) return undefined;
       return await operation({ signal: dialogAbort.signal });
    } finally {
       idleTimeout?.stop();
@@ -70,27 +72,41 @@ export async function askViaDialogs(
    onTimeout: () => void,
    signal?: AbortSignal,
    onTick?: (remainingSeconds: number) => void,
+   previous?: AskResponse,
 ): Promise<AskUIResult | null> {
-   const prompt = context ? `${question}\n\nContext:\n${context}` : question;
+   const basePrompt = context ? `${question}\n\nContext:\n${context}` : question;
+   const prompt = previous ? `${basePrompt}\n\nCurrent answer: ${formatResponseSummary(previous)}` : basePrompt;
+   const input = (title: string, placeholder: string) => runDialogWithIdleTimeout<string>(
+      ui, timeoutMs, onTimeout, (dialogOptions) => ui.input(title, placeholder, dialogOptions), signal, onTick,
+   );
+
+   if (options.length === 0) {
+      while (!signal?.aborted) {
+         const answer = await input(prompt, previous ? "New answer (Enter to keep current)..." : "Type your answer...");
+         if (isCancelledInput(answer)) return null;
+         if (!answer?.trim() && previous) return previous;
+         const response = createFreeformResponse(answer);
+         if (response) return response;
+      }
+      return null;
+   }
 
    if (allowMultiple) {
       const optionList = formatOptionsForMessage(options);
-      const rawSelections = await runDialogWithIdleTimeout(
-         ui,
-         timeoutMs,
-         onTimeout,
-         (dialogOptions) => ui.input(
-            `${prompt}\n\nOptions (select one or more):\n${optionList}`,
-            "Type your selection(s)...",
-            dialogOptions,
-         ),
-         signal,
-         onTick,
-      ) as string | undefined;
-      if (isCancelledInput(rawSelections)) return null;
-
-      const selections = parseDialogSelections(rawSelections);
-      if (selections.length === 0) return null;
+      let selections: string[] = [];
+      while (selections.length === 0 && !signal?.aborted) {
+         const rawSelections = await input(
+            `${prompt}\n\nOptions (select one or more by number or title):\n${optionList}${allowFreeform ? "\nOr type a custom answer." : ""}`,
+            previous ? "New selection(s) (Enter to keep current)..." : "Type your selection(s)...",
+         );
+         if (isCancelledInput(rawSelections)) return null;
+         if (!rawSelections?.trim() && previous) return previous;
+         const parsed = parseDialogSelections(rawSelections!);
+         const titles = parsed.map((value) => /^\d+$/.test(value) ? options[Number(value) - 1]?.title : options.find((option) => option.title === value)?.title);
+         if (titles.length && titles.every((title) => title !== undefined)) selections = [...new Set(titles as string[])];
+         else if (allowFreeform && rawSelections?.trim()) return createFreeformResponse(rawSelections);
+      }
+      if (signal?.aborted) return null;
 
       if (!allowComment) {
          return createSelectionResponse(selections);
@@ -108,11 +124,15 @@ export async function askViaDialogs(
          signal,
          onTick,
       ) as string | undefined;
+      if (isCancelledInput(comment)) return null;
       return createSelectionResponse(selections, comment);
    }
 
-   const selectOptions = options.map((o) => o.title);
+   // Number the labels so real option titles cannot collide with control actions.
+   const selectOptions = options.map((o, index) => `${index + 1}. ${o.title}`);
    if (allowFreeform) selectOptions.push(FREEFORM_SENTINEL);
+   const keepCurrent = "Keep current answer";
+   if (previous) selectOptions.unshift(keepCurrent);
 
    const selected = await runDialogWithIdleTimeout(
       ui,
@@ -123,22 +143,24 @@ export async function askViaDialogs(
       onTick,
    ) as string | undefined;
    if (isCancelledInput(selected)) return null;
+   if (selected === keepCurrent && previous) return previous;
 
    if (selected === FREEFORM_SENTINEL) {
-      const answer = await runDialogWithIdleTimeout(
-         ui,
-         timeoutMs,
-         onTimeout,
-         (dialogOptions) => ui.input(prompt, "Type your answer...", dialogOptions),
-         signal,
-         onTick,
-      ) as string | undefined;
-      if (isCancelledInput(answer)) return null;
-      return createFreeformResponse(answer);
+      while (!signal?.aborted) {
+         const answer = await input(prompt, "Type your answer...");
+         if (isCancelledInput(answer)) return null;
+         const response = createFreeformResponse(answer);
+         if (response) return response;
+      }
+      return null;
    }
 
+   const selectedIndex = selectOptions.indexOf(selected!)-(previous ? 1 : 0);
+   const selectedTitle = options[selectedIndex]?.title;
+   if (!selectedTitle) return null;
+
    if (!allowComment) {
-      return createSelectionResponse([selected]);
+      return createSelectionResponse([selectedTitle]);
    }
 
    const comment = await runDialogWithIdleTimeout(
@@ -146,12 +168,54 @@ export async function askViaDialogs(
       timeoutMs,
       onTimeout,
       (dialogOptions) => ui.input(
-         buildCommentPrompt(prompt, [selected]),
+         buildCommentPrompt(prompt, [selectedTitle]),
          "Optional comment (press Enter to skip)...",
          dialogOptions,
       ),
       signal,
       onTick,
    ) as string | undefined;
-   return createSelectionResponse([selected], comment);
+   if (isCancelledInput(comment)) return null;
+   return createSelectionResponse([selectedTitle], comment);
+}
+
+/** RPC clients receive ordinary dialogs with an explicit review/edit loop. */
+export async function askBatchViaDialogs(
+   ui: DialogUI,
+   questions: AskQuestion[],
+   timeoutMs: number | undefined,
+   onTimeout: () => void,
+   signal?: AbortSignal,
+   onTick?: (remainingSeconds: number) => void,
+): Promise<AskBatchResult | null> {
+   const responses: (AskResponse | null)[] = questions.map(() => null);
+   let index = 0;
+   while (!signal?.aborted) {
+      const question = questions[index];
+      const response = await askViaDialogs(
+         ui, `Question ${index + 1}/${questions.length}: ${question.question}`, question.context,
+         question.options, question.allowMultiple, question.allowFreeform, question.allowComment,
+         timeoutMs, onTimeout, signal, onTick, responses[index] ?? undefined,
+      );
+      if (!response || signal?.aborted) return null;
+      responses[index] = response;
+      const nextUnanswered = responses.findIndex((answer) => answer === null);
+      if (nextUnanswered >= 0) {
+         index = nextUnanswered;
+         continue;
+      }
+      const result = createBatchResult(questions, responses)!;
+      const summary = result.answers.map((answer) => `${answer.index}. ${answer.question}\n   ${formatResponseSummary(answer.response)}`).join("\n\n");
+      const editLabels = questions.map((question, index) => `${index + 1}. Edit: ${question.question}`);
+      const selected = await runDialogWithIdleTimeout<string>(
+         ui, timeoutMs, onTimeout,
+         (dialogOptions) => ui.select(`Review answers\n\n${summary}`, ["Submit all answers", ...editLabels], dialogOptions),
+         signal, onTick,
+      );
+      if (isCancelledInput(selected) || signal?.aborted) return null;
+      if (selected === "Submit all answers") return result;
+      index = editLabels.indexOf(selected!);
+      if (index < 0) return null;
+   }
+   return null;
 }

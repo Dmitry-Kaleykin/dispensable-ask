@@ -5,7 +5,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { DISPENSABLE_ASK_VERSION } from "../../version";
 import {
-  type AskDisplayMode, type AskSingleSelectLayout, type AskUIResult,
+  type AskDisplayMode, type AskSingleSelectLayout, type AskUIResult, type AskResponse,
   createFreeformResponse, createSelectionResponse,
 } from "../model";
 import { MultiSelectList } from "./multi-select-list";
@@ -51,6 +51,9 @@ export class AskComponent extends Container {
    private contextIsCollapsible = false;
    private contextExpanded = false;
    private remainingIdleSeconds: number | undefined;
+   private response: AskResponse | null = null;
+   private pageLabel?: string;
+   private confirmLabel?: string;
 
    // Static layout components
    private titleText: Text;
@@ -152,7 +155,8 @@ export class AskComponent extends Container {
       ));
 
       this.updateStaticText();
-      this.showSelectMode();
+      if (this.options.length === 0) this.showFreeformMode();
+      else this.showSelectMode();
    }
 
    override invalidate(): void {
@@ -166,6 +170,34 @@ export class AskComponent extends Container {
       if (remainingSeconds === this.remainingIdleSeconds) return;
       this.remainingIdleSeconds = remainingSeconds;
       this.tui.requestRender();
+   }
+
+   public setBatchPage(label: string, confirmLabel: string): void {
+      this.pageLabel = label;
+      this.confirmLabel = confirmLabel;
+      this.invalidate();
+   }
+
+   public focusOption(title: string): void {
+      if (this.mode === "select" && !this.allowMultiple) this.ensureSingleSelectList().focusOption(title);
+   }
+
+   /** Page navigation saves edits without submitting the batch or inventing a default choice. */
+   public getDraftResponse(): AskResponse | null {
+      this.saveEditorDraft();
+      if (this.mode === "freeform") return createFreeformResponse(this.freeformDraft);
+      if (this.mode === "comment") return createSelectionResponse(this.pendingSelections, this.commentDraft);
+      if (this.allowMultiple) {
+         const list = this.ensureMultiSelectList();
+         const selections = list.getDraftSelections()
+            ?? (this.response?.kind === "selection" ? this.response.selections : undefined);
+         if (selections) return createSelectionResponse(selections, list.isCommentEnabled() ? this.commentDraft : undefined);
+      } else if (this.response?.kind === "selection") {
+         const list = this.ensureSingleSelectList();
+         const title = list.getSelectedTitle();
+         return createSelectionResponse(title ? [title] : this.response.selections, list.isCommentEnabled() ? this.commentDraft : undefined);
+      }
+      return this.response;
    }
 
    override render(width: number): string[] {
@@ -504,9 +536,9 @@ export class AskComponent extends Container {
    }
 
    private renderTopBorder(width: number): string {
-      const title = this.remainingIdleSeconds === undefined
-         ? "ask_user"
-         : `ask_user · idle timeout ${this.remainingIdleSeconds}s`;
+      const page = this.pageLabel ? ` · ${this.pageLabel}` : "";
+      const timer = this.remainingIdleSeconds === undefined ? "" : ` · idle timeout ${this.remainingIdleSeconds}s`;
+      const title = truncateToWidth(`ask_user${page}${timer}`, Math.max(0, width - 6), "…");
       return new BoxBorderTop(
          (s: string) => this.theme.fg("accent", s),
          title,
@@ -564,6 +596,7 @@ export class AskComponent extends Container {
 
    private updateHelpText(): void {
       const theme = this.theme;
+      const pageHint = this.pageLabel ? literalHint(theme, "ctrl+p/n", "prev/next page") : null;
       const overlayHint = this.displayMode === "overlay" && !this.shortcuts.overlayToggle.disabled
          ? literalHint(theme, this.shortcuts.overlayToggle.spec, "hide")
          : null;
@@ -585,9 +618,10 @@ export class AskComponent extends Container {
             .getKeys("tui.select.cancel")
             .filter((key) => key !== "escape" && key !== "esc");
          const hints = [
-            keybindingHint(theme, this.keybindings, "tui.input.submit", this.mode === "comment" ? "submit/skip" : "submit"),
+            keybindingHint(theme, this.keybindings, "tui.input.submit", this.confirmLabel ?? (this.mode === "comment" ? "submit/skip" : "submit")),
             keybindingHint(theme, this.keybindings, "tui.input.newLine", "newline"),
             literalHint(theme, "esc", "back"),
+            pageHint,
             overlayHint,
             alternateCancelKeys.length > 0 ? literalHint(theme, formatKeyList(alternateCancelKeys), "cancel") : null,
          ]
@@ -606,7 +640,8 @@ export class AskComponent extends Container {
             contextHint,
             promptScrollHint,
             overlayHint,
-            keybindingHint(theme, this.keybindings, "tui.select.confirm", "submit"),
+            pageHint,
+            keybindingHint(theme, this.keybindings, "tui.select.confirm", this.confirmLabel ?? "submit"),
             keybindingHint(theme, this.keybindings, "tui.select.cancel", "cancel"),
          ]
             .filter((hint): hint is string => !!hint)
@@ -625,7 +660,8 @@ export class AskComponent extends Container {
             keybindingHint(theme, this.keybindings, "tui.editor.deleteCharBackward", "erase"),
             literalHint(theme, "↑↓", "navigate"),
             overlayHint,
-            keybindingHint(theme, this.keybindings, "tui.select.confirm", "select"),
+            pageHint,
+            keybindingHint(theme, this.keybindings, "tui.select.confirm", this.confirmLabel ?? "select"),
             literalHint(theme, "esc", "clear/cancel"),
             alternateCancelKeys.length > 0
                ? literalHint(theme, formatKeyList(alternateCancelKeys), "cancel")
@@ -711,23 +747,31 @@ export class AskComponent extends Container {
    private handleSelectionSubmit(selections: string[], wantsComment: boolean): void {
       if (this.allowComment && wantsComment) {
          this.pendingSelections = selections;
-         this.commentDraft = "";
          this.showCommentMode();
          return;
       }
 
-      this.onDone(createSelectionResponse(selections));
+      this.response = createSelectionResponse(selections);
+      this.onDone(this.response);
    }
 
    private handleEditorSubmit(text: string): void {
       if (this.mode === "freeform") {
-         this.onDone(createFreeformResponse(text));
+         const response = createFreeformResponse(text);
+         if (!response) return;
+         this.freeformDraft = text;
+         // Editor clears itself before onSubmit; restore the draft for revisiting this page.
+         this.setEditorText(text);
+         this.response = response;
+         this.onDone(response);
          return;
       }
 
       if (this.mode === "comment") {
          this.commentDraft = text;
-         this.onDone(createSelectionResponse(this.pendingSelections, text));
+         this.setEditorText(text);
+         this.response = createSelectionResponse(this.pendingSelections, text);
+         this.onDone(this.response);
       }
    }
 
@@ -859,7 +903,8 @@ export class AskComponent extends Container {
       }
       if (this.mode === "freeform" || this.mode === "comment") {
          if (matchesKey(data, Key.escape)) {
-            this.showSelectMode();
+            if (this.options.length === 0) this.onDone(null);
+            else this.showSelectMode();
             return;
          }
 

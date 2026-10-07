@@ -37,6 +37,93 @@ free-form answers, context, optional comments, and overlay or inline display.
 The package and its controls are named `dispensable-ask`. Only the tool exposed
 to the model is named `ask_user`.
 
+## Question batches
+
+Questions appear as pages in the same window, with a `Question 1/3` indicator.
+Press `Ctrl+N` for the next page or `Ctrl+P` for the previous page. These keys
+work in option lists, freeform editors, and comment editors. Moving between
+pages preserves selections, drafts, filters, and scroll positions. A highlighted
+default option alone does not count as an answer; press Enter to choose it.
+
+Enter saves an answer and advances to the next question. After the last question,
+the window shows a review page. Choose any question to edit its answer, or choose
+**Submit all answers** to send the entire batch to the agent. Returning from an
+edit opened through review takes you back to review. `Ctrl+P` on review opens the
+last question. Every question needs an answer before submission; the review page
+offers to open the first unanswered question when answers are missing.
+
+Freeform text, checked options, and comments are also saved when switching pages
+with `Ctrl+N/P`. Empty freeform text cannot be submitted. Even a batch containing
+one question has a review step. Escape keeps its existing local behavior: it
+clears an option filter or backs out of an editor; otherwise it cancels the batch.
+Escape in a question with only a freeform editor cancels the batch directly.
+
+The inactivity timer covers the whole batch, including review. Typing, selection,
+and page navigation restart it. Cancellation, interruption, or timeout discards
+all unsubmitted answers; the agent never receives partial drafts.
+
+RPC clients use ordinary select/input dialogs and a review menu with **Submit all
+answers** and **Edit** actions. Previous answers are shown when editing. The dialog
+protocol cannot prefill editors, so a blank replacement keeps the previous text;
+choice questions also offer **Keep current answer**.
+
+### Tool input and output
+
+The input uses a non-empty `questions` array, including for one question. The old
+top-level `question` field is no longer accepted. Context and all answer settings
+belong to individual questions:
+
+```json
+{
+  "questions": [
+    {
+      "question": "Which approach do you prefer?",
+      "context": "Both approaches satisfy the requirements.",
+      "options": [
+        { "title": "Small change", "description": "Keep the current structure" },
+        { "title": "Refactor", "description": "Reorganize the implementation" }
+      ],
+      "allowMultiple": false,
+      "allowFreeform": true,
+      "allowComment": true
+    },
+    { "question": "Any constraints to keep in mind?" }
+  ]
+}
+```
+
+`allowMultiple` controls the number of choices within one question. Defaults are
+`false` for `allowMultiple`, `true` for `allowFreeform`, and the environment preference
+(otherwise `false`) for `allowComment`. Omit `options` for a freeform question.
+The agent is guided to batch independent questions, usually no more than three.
+Dependent follow-up questions should use a later call.
+
+Submitted answers are returned together in tool text and details, in their original
+order. `index` is one-based and `response` distinguishes selections from freeform
+text:
+
+```json
+{
+  "answers": [
+    {
+      "index": 1,
+      "question": "Which approach do you prefer?",
+      "response": { "kind": "selection", "selections": ["Small change"], "comment": "Keep it focused." }
+    },
+    {
+      "index": 2,
+      "question": "Any constraints to keep in mind?",
+      "response": { "kind": "freeform", "text": "Preserve the public API." }
+    }
+  ]
+}
+```
+
+The `ask:answered` event fires once at final submission with `{ questions, answers }`.
+Cancellation and timeout events carry `{ questions }`, without draft answers.
+Saved calls and results from the old single-question schema remain readable in
+the transcript. Restart Pi and begin a new agent session to use the new schema.
+
 ## Install
 
 Install the local package globally in Pi:
@@ -172,6 +259,7 @@ src/
 │   ├── model.ts                      inputs, results, normalization
 │   └── ui/
 │       ├── ask-component.ts          question-flow container
+│       ├── batch-ask-component.ts    pagination, review, and final submission
 │       ├── multi-select-list.ts      multi-choice interaction
 │       ├── single-select-list.ts     searchable single-choice interaction
 │       ├── single-select-layout.ts   layout calculation

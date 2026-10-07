@@ -5,13 +5,26 @@ export type AskOptionInput = QuestionOption | string;
 export type AskDisplayMode = "overlay" | "inline";
 export type AskSingleSelectLayout = "auto" | "list";
 
-export interface AskParams {
+export interface AskQuestionInput {
    question: string;
    context?: string;
    options?: AskOptionInput[];
    allowMultiple?: boolean;
    allowFreeform?: boolean;
    allowComment?: boolean;
+}
+
+export interface AskParams {
+   questions: AskQuestionInput[];
+}
+
+export interface AskQuestion {
+   question: string;
+   context?: string;
+   options: QuestionOption[];
+   allowMultiple: boolean;
+   allowFreeform: boolean;
+   allowComment: boolean;
 }
 
 export type AskResponse =
@@ -26,15 +39,73 @@ export type AskResponse =
    };
 
 export interface AskToolDetails {
-   question: string;
-   context?: string;
-   options: QuestionOption[];
-   response: AskResponse | null;
+   questions: AskQuestion[];
+   answers: AskAnswer[] | null;
    cancelled: boolean;
    timedOut?: boolean;
+   error?: string;
 }
 
 export type AskUIResult = AskResponse;
+
+export interface AskAnswer {
+   /** One-based index in the original questions array. */
+   index: number;
+   question: string;
+   response: AskResponse;
+}
+
+export interface AskBatchResult {
+   answers: AskAnswer[];
+}
+
+/** Validate the whole batch before opening any UI, including proxy-mangled inputs. */
+export function normalizeQuestions(input: unknown, defaultAllowComment = false): AskQuestion[] {
+   if (!Array.isArray(input) || input.length === 0) {
+      throw new Error('Provide a non-empty "questions" array, for example { "questions": [{ "question": "Proceed?" }] }.');
+   }
+   return input.map((value, index) => {
+      const label = `Question ${index + 1}`;
+      if (!value || typeof value !== "object" || typeof value.question !== "string" || !value.question.trim()) {
+         throw new Error(`${label} must contain a non-empty question string.`);
+      }
+      if (value.options !== undefined && !Array.isArray(value.options)) {
+         throw new Error(`${label}: options must be an array.`);
+      }
+      const rawOptions: unknown[] = value.options ?? [];
+      const options = rawOptions.map(coerceOption).filter((option): option is QuestionOption => option !== null);
+      if (rawOptions.length > 0 && options.length === 0) {
+         throw new Error(`${label}: all options were malformed. Each option needs a title, for example { "title": "Short label", "description": "Optional detail" }.`);
+      }
+      for (const key of ["allowMultiple", "allowFreeform", "allowComment"] as const) {
+         if (value[key] !== undefined && typeof value[key] !== "boolean") {
+            throw new Error(`${label}: ${key} must be a boolean.`);
+         }
+      }
+      if (value.context !== undefined && typeof value.context !== "string") {
+         throw new Error(`${label}: context must be a string.`);
+      }
+      const allowFreeform = value.allowFreeform ?? true;
+      if (options.length === 0 && !allowFreeform) {
+         throw new Error(`${label} needs options or allowFreeform enabled.`);
+      }
+      return {
+         question: value.question.trim(),
+         context: value.context?.trim() || undefined,
+         options,
+         allowMultiple: value.allowMultiple ?? false,
+         allowFreeform,
+         allowComment: value.allowComment ?? defaultAllowComment,
+      };
+   });
+}
+
+export function createBatchResult(questions: AskQuestion[], responses: (AskResponse | null)[]): AskBatchResult | null {
+   if (responses.length !== questions.length || responses.some((response) => response === null)) return null;
+   return {
+      answers: questions.map((question, index) => ({ index: index + 1, question: question.question, response: responses[index]! })),
+   };
+}
 
 // Key aliases models fall back to when a schema-mangling proxy (Google
 // function calling, Codex-style backends, cmux) strips the option shape and

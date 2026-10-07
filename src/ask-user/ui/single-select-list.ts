@@ -55,6 +55,17 @@ export class WrappedSingleSelectList implements Component {
       return this.commentEnabled;
    }
 
+   public getSelectedTitle(): string | undefined {
+      return this.getFilteredOptions()[this.selectedIndex]?.title;
+   }
+
+   public focusOption(title: string): void {
+      this.setSearchQuery("");
+      const index = this.options.findIndex((option) => option.title === title);
+      if (index >= 0) this.selectedIndex = index;
+      this.invalidate();
+   }
+
    setMaxVisibleRows(rows: number): void {
       const next = Math.max(1, Math.floor(rows));
       if (next !== this.maxVisibleRows) {

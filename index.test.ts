@@ -1,4 +1,4 @@
-import { getKeybindings } from "@earendil-works/pi-tui";
+import { getKeybindings, type TUI } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import dispensableAsk from "./index";
 import { focusTerminal, shouldFocusTerminal } from "./src/ask-user/terminal-focus";
+import type { BatchAskComponent } from "./src/ask-user/ui/batch-ask-component";
 
 vi.mock("./src/ask-user/terminal-focus", () => ({
    focusTerminal: vi.fn(async () => {}),
@@ -83,6 +84,8 @@ function createContext(
          setStatus: vi.fn(),
          notify: vi.fn(),
          input: input ?? vi.fn(),
+         select: vi.fn(async (_prompt: string, options: string[]) => options.includes("Submit all answers") ? "Submit all answers" : undefined),
+         custom: vi.fn(async () => undefined),
          onTerminalInput: onTerminalInput ?? vi.fn(() => () => {}),
       },
    } as unknown as ExtensionContext;
@@ -140,7 +143,7 @@ describe("ask_user lifecycle", () => {
       vi.useFakeTimers();
       const harness = await createHarness();
       let answer!: (value: any) => void;
-      const dialog = vi.fn((_prompt, _placeholder, options) => new Promise((resolve) => {
+      const dialog = vi.fn((_prompt, _placeholder, options) => _prompt.startsWith("Review answers") ? Promise.resolve("Submit all answers") : new Promise((resolve) => {
          answer = resolve;
          options.signal.addEventListener("abort", () => resolve(undefined), { once: true });
       }));
@@ -150,7 +153,7 @@ describe("ask_user lifecycle", () => {
          ? vi.fn((factory: any) => new Promise((resolve) => {
             answer = resolve;
             factory(
-               { requestRender: vi.fn() },
+               { terminal: { rows: 24 }, requestRender: vi.fn() },
                { fg: (_color: string, text: string) => text, bold: (text: string) => text },
                getKeybindings(),
                resolve,
@@ -163,8 +166,7 @@ describe("ask_user lifecycle", () => {
       await harness.command("off", ctx);
       let settled = false;
       const pending = harness.tool.execute("untimed", {
-         question: "Which direction?",
-         options: kind === "freeform" ? [] : [{ title: "Yes" }],
+         questions: [{ question: "Which direction?", options: kind === "freeform" ? [] : [{ title: "Yes" }] }],
       }, undefined, undefined, ctx).then((result: any) => { settled = true; return result; });
       await vi.advanceTimersByTimeAsync(0);
       expect(vi.getTimerCount()).toBe(0);
@@ -173,7 +175,7 @@ describe("ask_user lifecycle", () => {
       expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "❓ ask timer:off");
       await harness.shortcut(ctx);
       expect(ctx.ui.notify).toHaveBeenLastCalledWith(expect.stringContaining("timer state was not changed"), "warning");
-      answer(kind === "custom" ? { kind: "selection", selections: ["Yes"] } : "Yes");
+      answer(kind === "custom" ? { answers: [{ index: 1, question: "Which direction?", response: { kind: "selection", selections: ["Yes"] } }] } : kind === "freeform" ? "Yes" : "1. Yes");
       const result = await pending;
       expect(result.details.cancelled).toBe(false);
       expect(result.details.timedOut).toBeUndefined();
@@ -192,7 +194,8 @@ describe("ask_user lifecycle", () => {
       const ctx = createContext(input as any);
       const controller = new AbortController();
       await harness.sessionStart(ctx);
-      const pending = harness.tool.execute("untimed", { question: "Proceed?" }, controller.signal, undefined, ctx);
+      const pending = harness.tool.execute("untimed", { questions: [{ question: "Proceed?" }] }, controller.signal, undefined, ctx);
+      await vi.advanceTimersByTimeAsync(0);
       if (action === "cancel") cancel();
       else controller.abort();
       const result = await pending;
@@ -213,7 +216,7 @@ describe("ask_user lifecycle", () => {
       ctx.ui.custom = kind === "custom"
          ? vi.fn((factory: any) => new Promise((resolve) => {
             factory(
-               { requestRender: vi.fn() },
+               { terminal: { rows: 24 }, requestRender: vi.fn() },
                { fg: (_color: string, text: string) => text, bold: (text: string) => text },
                getKeybindings(),
                resolve,
@@ -223,7 +226,7 @@ describe("ask_user lifecycle", () => {
       await harness.sessionStart(ctx);
       await harness.command("on", ctx);
       const pending = harness.tool.execute("timed", {
-         question: "Which direction?", options: [{ title: "Yes" }],
+         questions: [{ question: "Which direction?", options: [{ title: "Yes" }] }],
       }, undefined, undefined, ctx);
       await vi.advanceTimersByTimeAsync(30_000);
       const result = await pending;
@@ -236,11 +239,80 @@ describe("ask_user lifecycle", () => {
    it("keeps global and UI preferences out of the model-controlled schema", async () => {
       const harness = await createHarness();
       expect(harness.tool.name).toBe("ask_user");
+      expect(harness.tool.parameters.required).toEqual(["questions"]);
+      expect(harness.tool.parameters.properties).not.toHaveProperty("question");
       expect(harness.tool.parameters.properties).not.toHaveProperty("timeout");
       expect(harness.tool.parameters.properties).not.toHaveProperty("displayMode");
       expect(harness.tool.parameters.properties).not.toHaveProperty("singleSelectLayout");
       expect(harness.tool.parameters.properties).not.toHaveProperty("overlayToggleKey");
       expect(harness.tool.parameters.properties).not.toHaveProperty("commentToggleKey");
+   });
+
+   it.each([
+      { question: "Legacy shape?" },
+      { questions: [] },
+      { questions: [{ question: "Valid?" }, { question: "Impossible?", allowFreeform: false }] },
+      { questions: [{ question: "Valid?" }, { question: "Invalid?", options: [{}] }] },
+   ])("rejects malformed batches before any question opens: %j", async (params) => {
+      const harness = await createHarness();
+      const ctx = createContext();
+      vi.mocked(shouldFocusTerminal).mockReturnValue(true);
+      const result = await harness.tool.execute("invalid", params, undefined, undefined, ctx);
+      expect(result.isError).toBe(true);
+      expect(ctx.ui.input).not.toHaveBeenCalled();
+      expect(ctx.ui.custom).not.toHaveBeenCalled();
+      expect(focusTerminal).not.toHaveBeenCalled();
+   });
+
+   it.each(["submit", "cancel", "abort", "timeout"])("handles %s at review without releasing partial answers", async (action) => {
+      vi.useFakeTimers();
+      const harness = await createHarness();
+      const ctx = createContext();
+      let component!: BatchAskComponent;
+      ctx.ui.custom = vi.fn((factory: any) => new Promise((resolve) => {
+         component = factory(
+            { terminal: { rows: 24 }, requestRender: vi.fn() } as unknown as TUI,
+            { fg: (_color: string, text: string) => text, bold: (text: string) => text },
+            getKeybindings(), resolve,
+         );
+      })) as any;
+      const controller = new AbortController();
+      const onUpdate = vi.fn();
+      await harness.command("on", ctx);
+      const pending = harness.tool.execute("batch", { questions: [
+         { question: "First?", options: [{ title: "A" }] },
+         { question: "Second?", options: [{ title: "B" }] },
+      ] }, controller.signal, onUpdate, ctx);
+      component.handleInput("\r");
+      component.handleInput("\r");
+      expect(component.render(100).join("\n")).toContain("Review answers (2/2 answered)");
+      expect(onUpdate).toHaveBeenCalledOnce();
+      expect(onUpdate.mock.calls[0][0].details.answers).toBeNull();
+      expect(harness.api.events.emit).not.toHaveBeenCalledWith("ask:answered", expect.anything());
+      if (action === "submit") component.handleInput("\r");
+      else if (action === "cancel") component.handleInput("\x1b");
+      else if (action === "abort") controller.abort();
+      else {
+         await vi.advanceTimersByTimeAsync(29_000);
+         component.handleInput("\x10"); // Navigate back: activity restarts the idle timer.
+         await vi.advanceTimersByTimeAsync(29_000);
+         component.handleInput("\x0e");
+         await vi.advanceTimersByTimeAsync(30_000);
+      }
+      const result = await pending;
+      if (action === "submit") {
+         expect(result.details.answers.map((answer: any) => answer.index)).toEqual([1, 2]);
+         expect(JSON.parse(result.content[0].text.slice(result.content[0].text.indexOf("{"))).answers).toEqual(result.details.answers);
+         expect(harness.api.events.emit).toHaveBeenCalledWith("ask:answered", { questions: result.details.questions, answers: result.details.answers });
+      } else {
+         expect(result.details).toMatchObject({ answers: null, cancelled: true });
+         expect(harness.api.events.emit).not.toHaveBeenCalledWith("ask:answered", expect.anything());
+      }
+      expect(result.details.timedOut).toBe(action === "timeout" ? true : undefined);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(harness.api.events.emit).toHaveBeenLastCalledWith("herdr:blocked", { active: false });
+      await harness.command("off", ctx); // activeAsk was released after every exit path.
+      expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "❓ ask timer:off");
    });
 
    it("instructs the model to honor explicit test requests with a tool call", async () => {
@@ -264,7 +336,7 @@ describe("ask_user lifecycle", () => {
       const ctx = createContext(vi.fn(async () => "Yes"));
       ctx.ui.custom = vi.fn(async () => null) as any;
       await harness.command("on", ctx);
-      const pending = harness.tool.execute("focus", { question: "Proceed?", options }, undefined, undefined, ctx);
+      const pending = harness.tool.execute("focus", { questions: [{ question: "Proceed?", options }] }, undefined, undefined, ctx);
 
       expect(focusTerminal).toHaveBeenCalledOnce();
       expect(ctx.ui.input).not.toHaveBeenCalled();
@@ -272,17 +344,17 @@ describe("ask_user lifecycle", () => {
       expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "❓ ask timer:on");
       finishFocus();
       await pending;
-      expect(options.length ? ctx.ui.custom : ctx.ui.input).toHaveBeenCalledOnce();
+      expect(ctx.ui.custom).toHaveBeenCalledOnce();
    });
 
    it("does not focus for malformed, headless, RPC, or aborted calls", async () => {
       vi.mocked(shouldFocusTerminal).mockReturnValue(true);
       const harness = await createHarness();
       const ctx = createContext(vi.fn(async () => "Answer"));
-      const call = (params = { question: "Question?" }, context = ctx, signal?: AbortSignal) =>
+      const call = (params = { questions: [{ question: "Question?" }] }, context = ctx, signal?: AbortSignal) =>
          harness.tool.execute("skip", params, signal, undefined, context);
       await harness.command("on", ctx);
-      await call({ question: "Question?", options: [{}] } as any);
+      await call({ questions: [{ question: "Question?", options: [{}] }] } as any);
       await call(undefined, { ...ctx, hasUI: false });
       await call(undefined, { ...ctx, mode: "rpc" });
       await call(undefined, ctx, AbortSignal.abort());
@@ -296,7 +368,7 @@ describe("ask_user lifecycle", () => {
       const harness = await createHarness();
       const ctx = createContext();
       await harness.command("on", ctx);
-      const result = await harness.tool.execute("abort-focus", { question: "Question?" }, controller.signal, undefined, ctx);
+      const result = await harness.tool.execute("abort-focus", { questions: [{ question: "Question?" }] }, controller.signal, undefined, ctx);
       expect(result.details.cancelled).toBe(true);
       expect(ctx.ui.input).not.toHaveBeenCalled();
       await harness.command("off", ctx);
@@ -322,7 +394,7 @@ describe("ask_user lifecycle", () => {
       await harness.shortcut(ctx);
       const resultPromise = harness.tool.execute(
          "call-1",
-         { question: "Which direction?" },
+         { questions: [{ question: "Which direction?" }] },
          new AbortController().signal,
          undefined,
          ctx,
@@ -335,7 +407,7 @@ describe("ask_user lifecycle", () => {
       expect(result.content[0].text).toContain("Continue using your best judgment");
       expect(result.content[0].text).not.toContain("disabled");
       expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "❓ ask timer:on");
-      const nextQuestion = harness.tool.execute("next", { question: "Another question?" }, undefined, undefined, ctx);
+      const nextQuestion = harness.tool.execute("next", { questions: [{ question: "Another question?" }] }, undefined, undefined, ctx);
       await vi.advanceTimersByTimeAsync(1_000);
       expect((await nextQuestion).details.timedOut).toBe(true);
       expect(harness.activeTools()).toEqual(["read", "ask_user"]);
@@ -368,7 +440,7 @@ describe("ask_user lifecycle", () => {
       let settled = false;
       const resultPromise = harness.tool.execute(
          "call-2",
-         { question: "What should I use?" },
+         { questions: [{ question: "What should I use?" }] },
          new AbortController().signal,
          undefined,
          ctx,
@@ -377,6 +449,7 @@ describe("ask_user lifecycle", () => {
          return result;
       });
 
+      await vi.advanceTimersByTimeAsync(0);
       expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "❓ ask timer:on · 2s");
       await vi.advanceTimersByTimeAsync(1_000);
       expect(ctx.ui.setStatus).toHaveBeenLastCalledWith("dispensable-ask", "❓ ask timer:on · 1s");
